@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=5">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#8E44AD">
@@ -16,7 +16,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('./sw.js').then(reg => { reg.update(); return reg; })
           .then(() => console.log('PWA Service Worker registrato!'))
           .catch(err => console.log('Errore Service Worker:', err));
       });
@@ -376,7 +376,7 @@
   </div>
 
   <!-- script.js = dati e stato · app.js = tutta la logica -->
-  <script src="script.js"></script>
-  <script src="app.js"></script>
+  <script src="script.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
