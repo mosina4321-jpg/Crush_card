@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Celebrity Crush Cards</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#8E44AD">
+
+  <!-- Registrazione del Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(() => console.log('PWA Service Worker registrato!'))
+          .catch(err => console.log('Errore Service Worker:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+
+  <div class="app-container">
+
+    <!-- HEADER FISSO (Crediti) -->
+    <header class="top-bar">
+      <h1 class="app-logo">CRUSH CARDS</h1>
+      <div class="credits-badge">
+        <i class="fa-solid fa-coins"></i>
+        <span id="user-credits-header">500</span>
+      </div>
+    </header>
+
+    <!-- 1. SEZIONE HOME -->
+    <section id="sec-home" class="screen active">
+
+      <!-- STREAK GIORNALIERA -->
+      <div class="home-box streak-box">
+        <div class="streak-icon"><i class="fa-solid fa-fire-flame-curved"></i></div>
+        <h3 class="streak-title">Catena di Accesso</h3>
+        <p id="streak-info-text" class="streak-text">Caricamento streak...</p>
+        <button id="btn-claim-streak" class="btn-primary btn-compact" onclick="claimDailyStreak()">
+          RISCATTA PREMIO
+        </button>
+      </div>
+
+      <!-- FREE CARD (TOCCA LA CARD PER RISCATTARE) -->
+      <div class="home-box free-card-box">
+        <div class="box-tag">FREE CARD</div>
+
+        <div class="card-flip-container" id="card-flip-box" onclick="claimFreeCardAnimation()">
+          <div class="card-flipper" id="card-flipper">
+            <div class="card-face card-back">
+              <div class="card-back-pattern">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>TOCCA PER RISCATTARE</span>
+              </div>
+            </div>
+            <div class="card-face card-front" id="free-card-front">
+              <!-- Generato via JS -->
+            </div>
+          </div>
+        </div>
+
+        <p id="timer-text">Disponibile ogni 3 giorni</p>
+        <div id="countdown" class="countdown-timer">00h 00m</div>
+      </div>
+
+      <div class="home-grid-links">
+        <div class="home-card-link" onclick="openWheelModal()">
+          <i class="fa-solid fa-dharmachakra"></i>
+          <h4>Ruota della Fortuna</h4>
+          <p>Gira e vinci crediti</p>
+        </div>
+        <div class="home-card-link" onclick="openQuizModal()">
+          <i class="fa-solid fa-user-secret"></i>
+          <h4>Indovina la Crush</h4>
+          <p>Indovina (+30 Crediti)</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. SEZIONE ALBUM -->
+    <section id="sec-album" class="screen">
+      <!-- VISTA 1: LISTA COLLEZIONI -->
+      <div id="album-collections-view">
+        <h2>Le Tue Collezioni</h2>
+        <p class="shop-subtitle">Scegli un album da sfogliare!</p>
+        <div id="collections-list" class="collections-grid">
+          <!-- Generato via JS -->
+        </div>
+      </div>
+
+      <!-- VISTA 2: GRIGLIA DENTRO LA COLLEZIONE -->
+      <div id="album-cards-view" class="hidden">
+        <div class="album-category-header">
+          <button class="arrow-btn" onclick="prevPage()"><i class="fa-solid fa-chevron-left"></i></button>
+          <h3 id="album-category-title">Nome Collezione</h3>
+          <button class="arrow-btn" onclick="nextPage()"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+
+        <!-- Griglia 4x4 (16 card per pagina) -->
+        <div class="album-grid-container">
+          <div class="album-grid" id="album-grid">
+            <!-- Generato via JS -->
+          </div>
+        </div>
+
+        <div id="page-number-footer" class="album-page-footer">Pagina 1 di 1</div>
+        <div class="album-footer-actions">
+          <button class="btn-primary btn-ghost" onclick="closeCollection()">Torna alle Collezioni</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. SEZIONE SHOP -->
+    <section id="sec-shop" class="screen">
+      <h2>Shop Ufficiale</h2>
+
+      <div class="shop-tabs">
+        <button id="tab-btn-packs" class="shop-tab-btn active" onclick="switchShopTab('packs')">
+          <i class="fa-solid fa-box-open"></i> Buste
+        </button>
+        <button id="tab-btn-singles" class="shop-tab-btn" onclick="switchShopTab('singles')">
+          <i class="fa-solid fa-gem"></i> Card singole
+        </button>
+      </div>
+
+      <!-- BUSTE -->
+      <div id="shop-packs-view">
+        <p class="shop-subtitle">Ogni busta contiene card casuali della collezione!</p>
+        <div id="packs-grid" class="packs-grid">
+          <!-- Generato via JS -->
+        </div>
+        <p class="pack-odds">Probabilità: Comune 70% · Rara 25% · Leggendaria 5%</p>
+      </div>
+
+      <!-- CARD SINGOLE PER CATEGORIA -->
+      <div id="shop-singles-view" class="hidden">
+        <p class="shop-subtitle">Scegli le card che ti mancano e acquistale una a una!</p>
+        <div id="shop-categories-list">
+          <!-- Generato via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. SEZIONE PROFILO -->
+    <section id="sec-profile" class="screen">
+      <h2>Profilo Collezionista</h2>
+      <div class="profile-card">
+
+        <div class="avatar-select" onclick="openAvatarSelector()" title="Cambia Avatar">
+          <div class="avatar-icon-wrapper" id="profile-avatar-display">
+            <i class="fa-solid fa-user-astronaut"></i>
+          </div>
+          <div class="avatar-edit-badge"><i class="fa-solid fa-camera"></i></div>
+        </div>
+
+        <div class="edit-name-box">
+          <input type="text" id="username-input" value="SapphicCollector" maxlength="15">
+          <button class="btn-small" onclick="saveUsername()"><i class="fa-solid fa-check"></i></button>
+        </div>
+
+        <div class="user-rank-badge" id="user-rank-badge">
+          <i class="fa-solid fa-crown"></i> <span id="rank-title-text">Novizia</span>
+        </div>
+
+        <div class="favorite-crush-section">
+          <h4><i class="fa-solid fa-heart favorite-heart"></i> Crush Preferita</h4>
+          <div class="favorite-card-slot" id="favorite-card-slot" onclick="openFavoriteSelector()">
+            <p class="empty-fav-text">+ Tocca per scegliere la tua preferita</p>
+          </div>
+        </div>
+
+        <div class="stats-container">
+          <div class="stat-box">
+            <i class="fa-solid fa-coins"></i>
+            <h4>Crediti</h4>
+            <p id="user-credits-profile">0</p>
+          </div>
+          <div class="stat-box">
+            <i class="fa-solid fa-book-open"></i>
+            <h4>Completamento</h4>
+            <p id="completion-rate">0 / 0</p>
+          </div>
+        </div>
+
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+
+        <div class="rarity-breakdown">
+          <div class="rarity-stat-item comune">
+            <span>Comuni</span>
+            <strong id="stat-comune">0</strong>
+          </div>
+          <div class="rarity-stat-item rara">
+            <span>Rare</span>
+            <strong id="stat-rara">0</strong>
+          </div>
+          <div class="rarity-stat-item leggendaria">
+            <span>Leggendarie</span>
+            <strong id="stat-leggendaria">0</strong>
+          </div>
+        </div>
+
+        <div class="data-actions-box">
+          <button class="btn-reset-data" onclick="resetGameProgress()"><i class="fa-solid fa-trash-arrow-up"></i> Resetta Progressi</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MODALE ZOOM CARD CON FLIP 3D -->
+    <div id="zoom-modal" class="modal hidden" onclick="closeZoomModal()">
+      <div class="zoom-modal-content" onclick="event.stopPropagation()">
+        <button class="close-zoom-btn" onclick="closeZoomModal()">&times;</button>
+
+        <div class="tilt-card-container" onclick="toggleCardFlip()">
+          <div id="zoom-card-inner">
+            <!-- Fronte e retro generati via JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODALE SELEZIONE AVATAR / PREFERITA -->
+    <div id="selection-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="selection-modal-title">Scegli Avatar</h3>
+          <button class="close-btn" onclick="closeModal('selection-modal')">&times;</button>
+        </div>
+
+        <!-- Input nascosto per caricare una foto dal dispositivo -->
+        <input type="file" id="user-avatar-input" accept="image/*" class="visually-hidden" onchange="handleCustomAvatarUpload(event)">
+
+        <!-- Pulsanti d'azione (carica foto, rimuovi avatar) -->
+        <div id="avatar-action-box"></div>
+
+        <div class="selection-grid" id="selection-grid">
+          <!-- Generato via JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- MODALE REWARD CARD CON GRATTA E VINCI -->
+    <div id="reward-modal" class="modal hidden">
+      <div class="modal-content modern-reward-content">
+        <div class="reward-header">
+          <h3>✨ Nuova Crush Sbloccata! ✨</h3>
+          <p id="scratch-instruction">Gratta la superficie per rivelarla</p>
+        </div>
+
+        <div class="scratch-container" id="scratch-container">
+          <div id="modal-card-front" class="scratch-card-under">
+            <!-- Card generata via JS sotto il canvas -->
+          </div>
+          <canvas id="scratch-canvas" class="scratch-canvas" width="200" height="280"></canvas>
+        </div>
+
+        <button class="btn-primary reward-btn" id="btn-close-reward" onclick="closeModal('reward-modal')" style="display: none;">
+          Aggiungi all'Album 💖
+        </button>
+      </div>
+    </div>
+
+    <!-- MODALE INDOVINA LA CRUSH -->
+    <div id="quiz-modal" class="modal hidden">
+      <div class="modal-content quiz-content">
+        <div class="modal-header">
+          <h3>Indovina la Crush 🕵️</h3>
+          <button class="close-btn" onclick="closeModal('quiz-modal')">&times;</button>
+        </div>
+        <p class="modal-desc">Indovina chi si nasconde dietro la foto sfocata e vinci +30 Crediti! Hai un solo tentativo al giorno.</p>
+        <div id="quiz-body">
+          <!-- Generato via JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- MODALE RUOTA DELLA FORTUNA -->
+    <div id="wheel-modal" class="modal hidden">
+      <div class="modal-content wheel-modal-content">
+        <div class="modal-header">
+          <h3>Ruota della Fortuna 🎡</h3>
+          <button class="close-btn" onclick="closeModal('wheel-modal')">&times;</button>
+        </div>
+        <p class="modal-desc">Gira la ruota una volta al giorno: puoi vincere da 10 a 50 crediti o una card rara!</p>
+
+        <div class="wheel-outer-wrapper">
+          <div class="wheel-pointer">▼</div>
+          <div class="wheel-container" id="wheel-container">
+            <canvas id="wheel-canvas" width="280" height="280"></canvas>
+          </div>
+        </div>
+
+        <button id="btn-spin-wheel" class="btn-primary btn-wheel" onclick="spinWheel()">
+          GIRA LA RUOTA 🎯
+        </button>
+      </div>
+    </div>
+
+    <!-- MODALE APERTURA BUSTA -->
+    <div id="pack-opening-modal" class="modal hidden">
+      <div class="pack-modal-inner">
+        <h3 id="pack-modal-title" class="pack-title">Busta</h3>
+
+        <div id="pack-3d-element" class="pack-3d" onclick="unpackSequence()">
+          <i class="fa-solid fa-box-open"></i>
+          <span>TOCCA PER APRIRE</span>
+        </div>
+
+        <div id="pack-revealed-cards" class="pack-revealed hidden">
+          <!-- Generato via JS -->
+        </div>
+
+        <button id="btn-collect-pack" class="btn-primary reward-btn hidden" onclick="closePackModal()">
+          Aggiungi all'Album 💖
+        </button>
+      </div>
+    </div>
+
+    <!-- MODALE NOTIFICA PERSONALIZZATA -->
+    <div id="custom-alert-modal" class="modal hidden">
+      <div class="modal-content modal-small">
+        <div id="custom-alert-icon" class="modal-icon">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <h3 id="custom-alert-title" class="modal-title">Notifica</h3>
+        <p id="custom-alert-message" class="modal-text">Messaggio qui</p>
+        <button class="btn-primary btn-compact" onclick="closeCustomAlert()">Capito! 💖</button>
+      </div>
+    </div>
+
+    <!-- MODALE CONFERMA ACQUISTO -->
+    <div id="confirm-buy-modal" class="modal hidden">
+      <div class="modal-content modal-small">
+        <div class="modal-icon">
+          <i class="fa-solid fa-store"></i>
+        </div>
+        <h3 id="confirm-buy-title" class="modal-title">Acquista</h3>
+        <p id="confirm-buy-message" class="modal-text">Vuoi acquistare questo articolo?</p>
+        <div class="modal-actions">
+          <button class="btn-primary btn-compact btn-secondary" onclick="cancelBuyCard()">Annulla</button>
+          <button class="btn-primary btn-compact" onclick="confirmBuyCard()">Conferma 💖</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAVBAR IN BASSO -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" onclick="switchTab('sec-home', this)">
+        <i class="fa-solid fa-house"></i>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" onclick="switchTab('sec-album', this)">
+        <i class="fa-solid fa-book-bookmark"></i>
+        <span>Album</span>
+      </button>
+      <button class="nav-item" onclick="switchTab('sec-shop', this)">
+        <i class="fa-solid fa-store"></i>
+        <span>Shop</span>
+      </button>
+      <button class="nav-item" onclick="switchTab('sec-profile', this)">
+        <i class="fa-solid fa-user"></i>
+        <span>Profilo</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- script.js = dati e stato · app.js = tutta la logica -->
+  <script src="script.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
