@@ -53,7 +53,7 @@ let albumState = {
 const collectionsDatabase = [
   {
     id: "blackpink",
-    title: "BLACKPINK Collection 🖤🩷",
+    title: "BLACKPINK Collection 🖤",
     description: "Jennie, Rosé, Lisa, Jisoo & Ships",
     coverImg: "https://i.pinimg.com/1200x/c9/82/b7/c982b7a1a68d674cfeec108b47f250e3.jpg"
   },
@@ -81,9 +81,9 @@ const collectionsDatabase = [
 const packsDatabase = [
   {
     id: "pack-bp-debut",
-    name: "BLACKPINK Pack 🖤🩷",
+    name: "BLACKPINK Pack 🖤",
     price: 150,
-    cover: "https://i.pinimg.com/736x/a3/04/70/a30470eeb1a1bedb3394bfe66a3233fd.jpg",
+    cover: "https://i.pinimg.com/736x/af/cf/4a/afcf4a0a45a884ae79b2f6008277490d.jpg",
     collectionId: "blackpink",
     cardCount: 3
   },
@@ -91,7 +91,7 @@ const packsDatabase = [
     id: "pack-pop-icon",
     name: "Pop Queens Album Pack 🎤",
     price: 200,
-    cover: "https://i.pinimg.com/736x/17/2c/34/172c34440b1b1b39dde99cc9aa966968.jpg",
+    cover: "https://i.pinimg.com/736x/60/15/1e/60151ef9c3ea65f3deaa9541c3afca60.jpg",
     collectionId: "special-popstar",
     cardCount: 3
   },
@@ -99,7 +99,7 @@ const packsDatabase = [
     id: "pack-movies",
     name: "Hollywood Stars Pack 🎬",
     price: 180,
-    cover: "https://i.pinimg.com/736x/6c/e6/a0/6ce6a018cdc0db12557122597697d93e.jpg",
+    cover: "https://i.pinimg.com/1200x/27/48/23/274823e7d3332903bfb1a1436fe2607c.jpg",
     collectionId: "special-actress",
     cardCount: 3
   },
@@ -107,7 +107,7 @@ const packsDatabase = [
     id: "pack-gl-ships",
     name: "GL Series & Ships Pack 💖",
     price: 220,
-    cover: "https://i.pinimg.com/736x/3b/99/09/3b99097dc1942434876a86aa46e37774.jpg",
+    cover: "https://i.pinimg.com/736x/15/e8/48/15e8486359bb03f44a94d967f0bfa266.jpg",
     collectionId: "special-ships",
     cardCount: 3
   }
