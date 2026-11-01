@@ -26,7 +26,7 @@ const WHEEL_PRIZES = [
   { label: '20', credits: 20, type: 'credits', color: '#ff5fa8', weight: 20 },
   { label: '25', credits: 25, type: 'credits', color: '#2ecc71', weight: 12 },
   { label: '50', credits: 50, type: 'credits', color: '#e74c3c', weight: 6 },
-  { label: 'CARD 🌟', type: 'card', color: '#f1c40f', weight: 2 }
+  { label: 'FREE CARD 🌟', type: 'card', color: '#f1c40f', weight: 2 }
 ];
 
 /* ---------- STATO LOCALE DELL'APP ---------- */
@@ -198,23 +198,27 @@ function renderCollections() {
   const container = byId('collections-list');
   if (!container) return;
 
-  container.innerHTML = collectionsDatabase.map(col => {
+  container.innerHTML = collectionsDatabase.map((col, i) => {
     const colCards = cardsDatabase.filter(c => c.collectionId === col.id);
     const unlocked = colCards.filter(c => isUnlocked(c.id)).length;
-    const percent = colCards.length > 0 ? (unlocked / colCards.length) * 100 : 0;
+    const total = colCards.length;
+    const percent = total > 0 ? Math.round((unlocked / total) * 100) : 0;
+    const complete = total > 0 && unlocked === total;
+    const hue = (i * 47 + 320) % 360; // colore di riserva se la foto non carica
 
     return `
-      <div class="collection-card-item" onclick="openCollection('${col.id}')">
-        <div class="col-cover" style="background-image: url('${col.coverImg}')">
-          <div class="col-overlay">
-            <h4>${col.title}</h4>
-            <p>${unlocked} / ${colCards.length} sbloccate</p>
-            <div class="col-progress-bar">
-              <div class="col-progress-fill" style="width: ${percent}%"></div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <button class="album-book ${complete ? 'complete' : ''}" style="--i:${i}; --hue:${hue}" onclick="openCollection('${col.id}')">
+        <span class="album-book-pages"></span>
+        <span class="album-book-cover" style="background-image: url('${col.coverImg}')">
+          <span class="album-book-spine"></span>
+          <span class="album-book-badge">${complete ? '<i class="fa-solid fa-crown"></i>' : percent + '%'}</span>
+          <span class="album-book-info">
+            <span class="album-book-title">${col.title}</span>
+            <span class="album-book-count">${unlocked} / ${total} card</span>
+            <span class="col-progress-bar"><span class="col-progress-fill" style="width: ${percent}%"></span></span>
+          </span>
+        </span>
+      </button>
     `;
   }).join('');
 }
@@ -371,14 +375,17 @@ function renderPacks() {
 
   container.innerHTML = packsDatabase.map(pack => {
     const canAfford = userState.credits >= pack.price;
+    const left = lockedCardsOfPack(pack).length;
+    const done = left === 0;
+    const countLabel = done ? 'Completa ✓' : (left < pack.cardCount ? `${left} card` : `${pack.cardCount} card`);
     return `
-      <div class="pack-card" onclick="promptBuyPack('${pack.id}')">
+      <div class="pack-card ${done ? 'pack-done' : ''}" onclick="promptBuyPack('${pack.id}')">
         <div class="pack-art" style="--pack-cover: url('${pack.cover}')">
-          <span class="pack-count">${pack.cardCount} card</span>
+          <span class="pack-count">${countLabel}</span>
         </div>
         <h4>${pack.name}</h4>
-        <div class="pack-price ${canAfford ? '' : 'cant-afford'}">
-          <i class="fa-solid fa-coins"></i> ${pack.price}
+        <div class="pack-price ${canAfford && !done ? '' : 'cant-afford'}">
+          ${done ? 'Collezione completata' : `<i class="fa-solid fa-coins"></i> ${pack.price}`}
         </div>
       </div>
     `;
@@ -510,13 +517,22 @@ function promptBuyPack(packId) {
   const pack = packsDatabase.find(p => p.id === packId);
   if (!pack) return;
 
+  const left = lockedCardsOfPack(pack).length;
+  if (left === 0) {
+    showPopup('Collezione completa! 👑', 'Hai già tutte le card di questa collezione: non ci sono più card da scoprire in questa busta.', 'fa-solid fa-crown');
+    return;
+  }
   if (userState.credits < pack.price) {
     showPopup('Crediti insufficienti! 💸', 'Gioca a Indovina la Crush, gira la ruota o riscatta la streak per ottenere altri crediti!', 'fa-solid fa-coins');
     return;
   }
   pendingPurchaseCardId = null;
   pendingPurchasePackId = packId;
-  openConfirmBuy(`Acquista ${pack.name}`, `Vuoi acquistare questa busta con ${pack.cardCount} card per ${pack.price} crediti?`);
+  const price = packPrice(pack);
+  const msg = left < pack.cardCount
+    ? `Ti mancano solo ${left} card di questa collezione: la busta ne conterrà ${left} e pagherai ${price} crediti.`
+    : `Vuoi acquistare questa busta con ${pack.cardCount} card per ${price} crediti? Dentro ci saranno solo card che non hai ancora.`;
+  openConfirmBuy(`Acquista ${pack.name}`, msg);
 }
 
 function promptBuyCard(cardId) {
@@ -545,11 +561,13 @@ function confirmBuyCard() {
 
   if (packId) {
     const pack = packsDatabase.find(p => p.id === packId);
-    if (!pack || userState.credits < pack.price) return;
-    userState.credits -= pack.price;
+    if (!pack || lockedCardsOfPack(pack).length === 0) return;
+    const price = packPrice(pack);
+    if (userState.credits < price) return;
+    userState.credits -= price;
     saveProgress();
     updateUI();
-    openPackSequence(pack);
+    openPackSequence(pack, price);
     return;
   }
 
@@ -565,8 +583,22 @@ function confirmBuyCard() {
 }
 
 /* ---------- APERTURA BUSTE ---------- */
+// card della collezione che l'utente NON ha ancora (le buste non danno mai doppioni)
+// se mancano meno card di quelle della busta, il prezzo scende in proporzione
+function packPrice(pack) {
+  const left = lockedCardsOfPack(pack).length;
+  if (left >= pack.cardCount) return pack.price;
+  return Math.max(1, Math.round(pack.price * left / pack.cardCount));
+}
+
+function lockedCardsOfPack(pack) {
+  // una busta può pescare da una collezione (collectionId) o da più collezioni (collectionIds)
+  const ids = pack.collectionIds || [pack.collectionId];
+  return cardsDatabase.filter(c => ids.includes(c.collectionId) && !isUnlocked(c.id));
+}
+
 function pickPackCards(pack) {
-  const pool = cardsDatabase.filter(c => c.collectionId === pack.collectionId);
+  const pool = lockedCardsOfPack(pack);
   const picked = [];
 
   while (picked.length < pack.cardCount && picked.length < pool.length) {
@@ -578,10 +610,10 @@ function pickPackCards(pack) {
   return picked;
 }
 
-function openPackSequence(pack) {
+function openPackSequence(pack, paid) {
   const cards = pickPackCards(pack);
   if (cards.length === 0) {
-    userState.credits += pack.price; // rimborso, non dovrebbe mai succedere
+    userState.credits += (paid || pack.price); // rimborso, non dovrebbe mai succedere
     saveProgress();
     updateUI();
     showPopup('Errore busta ⚠️', 'Nessuna card trovata in questa collezione: ti ho rimborsato i crediti.', 'fa-solid fa-triangle-exclamation');
