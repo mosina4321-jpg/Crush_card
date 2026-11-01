@@ -21,11 +21,11 @@ const QUIZ_CATEGORIES = ['Cantante', 'Attrice', 'Pop Star', 'Attrice GL']; // so
 const AVATAR_SIZE = 256;
 
 const WHEEL_PRIZES = [
-  { label: '10 🪙', credits: 10, type: 'credits', color: '#9b59ff', weight: 35 },
-  { label: '15 🪙', credits: 15, type: 'credits', color: '#3da5ff', weight: 25 },
-  { label: '20 🪙', credits: 20, type: 'credits', color: '#ff5fa8', weight: 20 },
-  { label: '25 🪙', credits: 25, type: 'credits', color: '#2ecc71', weight: 12 },
-  { label: '50 🪙', credits: 50, type: 'credits', color: '#e74c3c', weight: 6 },
+  { label: '10', credits: 10, type: 'credits', color: '#9b59ff', weight: 35 },
+  { label: '15', credits: 15, type: 'credits', color: '#3da5ff', weight: 25 },
+  { label: '20', credits: 20, type: 'credits', color: '#ff5fa8', weight: 20 },
+  { label: '25', credits: 25, type: 'credits', color: '#2ecc71', weight: 12 },
+  { label: '50', credits: 50, type: 'credits', color: '#e74c3c', weight: 6 },
   { label: 'CARD 🌟', type: 'card', color: '#f1c40f', weight: 2 }
 ];
 
