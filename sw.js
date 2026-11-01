@@ -1,7 +1,7 @@
 /* sw.js — service worker "rete prima": prova sempre a scaricare i file aggiornati
    e usa la cache solo se sei offline. Così dopo ogni modifica vedi subito la versione nuova.
    Quando cambi molti file, aumenta il numero di CACHE. */
-const CACHE = 'crush-cards-v4';
+const CACHE = 'crush-cards-v5';
 
 self.addEventListener('install', () => self.skipWaiting());
 
