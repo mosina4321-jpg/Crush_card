@@ -23,8 +23,8 @@ function loadProgress() {
 
 /* ---------- STATO UTENTE ---------- */
 let userState = loadProgress() || {
-  credits: 500,
-  username: "SapphicCollector",
+  credits: 755,
+  username: "Username",
   unlockedCards: [],
   favoriteCardId: null,
   avatarImg: null,
