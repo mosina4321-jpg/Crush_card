@@ -384,7 +384,7 @@ const cardsDatabase = [
   { id: 227, collectionId: "special-popstar", name: "Chappell Roan", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/1200x/62/be/c4/62bec434c2af42d91d59c5a8de2599f1.jpg" },
   { id: 228, collectionId: "special-popstar", name: "Daniela (KATSEYE)", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/5b/e5/57/5be557045c46bd5875835c0454ff7554.jpg" },
   { id: 229, collectionId: "special-popstar", name: "Lara (KATSEYE)", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/33/8c/b0/338cb0af8876f8d47bb86d2a60bc9c8e.jpg" },
-  { id: 230, collectionId: "special-popstar", name: "Manon (KATSEYE)", category: "Pop Star", rarity: "RARA", price: 150, img: "https://i.pinimg.com/736x/d4/07/12/d40712e510c8d46dbe81b0c7153301fa.jpg" },
+  { id: 230, collectionId: "special-popstar", name: "Manon (KATSEYE)", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/d4/07/12/d40712e510c8d46dbe81b0c7153301fa.jpg" },
   { id: 231, collectionId: "special-popstar", name: "Megan (KATSEYE)", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/1a/ad/4c/1aad4c98449f8319df1c1e3c6ec0c631.jpg" },
   { id: 232, collectionId: "special-popstar", name: "Olivia Dean", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/05/5c/5d/055c5df4c47ca429dc755ff626e67502.jpg" },
   { id: 233, collectionId: "special-popstar", name: "Sienna Spiro", category: "Pop Star", rarity: "COMUNE", price: 50, img: "https://i.pinimg.com/736x/0d/2c/81/0d2c818f31361541680842432cda7fd2.jpg" },
