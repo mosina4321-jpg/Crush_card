@@ -59,7 +59,7 @@ const collectionsDatabase = [
   },
   {
     id: "lisa-special",
-    title: "Lisa Collection 🌟",
+    title: "Lisa Collection ✨",
     description: "LaLisa",
     coverImg: "https://i.pinimg.com/736x/08/8d/ae/088daefe328d5f8798d653a1ad6fef8d.jpg"
   },
@@ -71,13 +71,13 @@ const collectionsDatabase = [
   },
   {
     id: "jisoo-special",
-    title: "Jisoo Collection �",
+    title: "Jisoo Collection 💜",
     description: "Jisoo",
     coverImg: "https://i.pinimg.com/736x/fb/f5/e7/fbf5e7bf4ca7257479c196ee444fc4b2.jpg"
   },
   {
     id: "blackpink",
-    title: "BLACKPINK Collection",
+    title: "BLACKPINK Collection 🎼",
     description: "Jennie, Rosé, Lisa, Jisoo & Ships",
     coverImg: "https://i.pinimg.com/736x/af/cf/4a/afcf4a0a45a884ae79b2f6008277490d.jpg"
   },
@@ -89,7 +89,7 @@ const collectionsDatabase = [
   },
   {
     id: "special-actress",
-    title: "Hollywood Star",
+    title: "Hollywood Star 🎞",
     description: "MilkLove, LMSY & Iconic Duos",
     coverImg: "https://i.pinimg.com/1200x/27/48/23/274823e7d3332903bfb1a1436fe2607c.jpg"
   },
@@ -101,9 +101,15 @@ const collectionsDatabase = [
   },
   {
      id: "gl-ships",
-     title: "GL Thai Ships 💖",
+     title: "GL Thai Ships 👩🏻‍🤝‍👩🏻",
      description: "Le coppie GL più amate",
      coverImg: "https://i.pinimg.com/736x/39/fd/54/39fd54a2ad48238460e021f8296eaeee.jpg"
+  },
+  {
+    id: 'xmas-2026',
+    title: 'Natale 2026 🎄',
+    description: 'Edizione limitata',
+    coverImg: 'INCOLLA-QUI-URL-COPERTINA'
   }
 ];
 
@@ -139,6 +145,14 @@ const packsDatabase = [
     price: 220,
     cover: "https://i.pinimg.com/736x/39/fd/54/39fd54a2ad48238460e021f8296eaeee.jpg",
        collectionIds: ["special-ships", "gl-ships"],
+    cardCount: 3
+  },
+  {
+    id: 'pack-xmas',
+    name: 'Busta di Natale',
+    price: 200,
+    cover: 'INCOLLA-QUI-URL-BUSTA',
+    collectionId: 'xmas-2026',
     cardCount: 3
   }
 ];
@@ -514,4 +528,42 @@ const cardsDatabase = [
   { id: 350, collectionId: "special-ships", name: "Ploy", category: "Attrice GL", rarity: "LEGGENDARIA", price: 500, img: "https://i.pinimg.com/736x/3b/d7/8d/3bd78df3053cb3f349965669dba89e23.jpg" },
   { id: 351, collectionId: "special-ships", name: "Sonya", category: "Attrice GL", rarity: "LEGGENDARIA", price: 500, img: "https://i.pinimg.com/736x/62/cb/ac/62cbac995c84031e1ce8c30715a92f62.jpg" },
   { id: 352, collectionId: "special-ships", name: "Lookmhee", category: "Attrice GL", rarity: "LEGGENDARIA", price: 500, img: "https://i.pinimg.com/736x/0e/14/98/0e1498b3ccf781e76c08155f709fc905.jpg" },
+];
+
+// ---------- NATALE 2026 (card a tempo) ----------
+// Per ogni card scrivi: nome, rarità e URL. Gli id partono da 353.
+[
+  ['Nome 1',  'COMUNE',       'URL-1'],
+  ['Nome 2',  'COMUNE',       'URL-2'],
+  ['Nome 3',  'COMUNE',       'URL-3'],
+  ['Nome 4',  'COMUNE',       'URL-4'],
+  ['Nome 5',  'COMUNE',       'URL-5'],
+  ['Nome 6',  'COMUNE',       'URL-6'],
+  ['Nome 7',  'RARA',         'URL-7'],
+  ['Nome 8',  'RARA',         'URL-8'],
+  ['Nome 9',  'RARA',         'URL-9'],
+  ['Nome 10', 'LEGGENDARIA',  'URL-10']
+].forEach((c, i) => {
+  const prezzi = { COMUNE: 50, RARA: 150, LEGGENDARIA: 500 };
+  cardsDatabase.push({
+    id: 353 + i,
+    collectionId: 'xmas-2026',
+    name: c[0],
+    category: 'Natale',
+    rarity: c[1],
+    price: prezzi[c[1]],
+    img: c[2]
+  });
+});
+
+// ---------- EVENTI A TEMPO ----------
+const eventsDatabase = [
+  {
+    id: 'xmas-2026',
+    title: 'Happy Holidays 🎁',
+    start: '2026-12-01',
+    end: '2026-12-26',
+    collectionId: 'xmas-2026',
+    packId: 'pack-xmas'
+  }
 ];
