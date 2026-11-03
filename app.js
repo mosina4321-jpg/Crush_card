@@ -699,15 +699,25 @@ function renderSinglesShop() {
       const ev = eventOfCollection(col.id);
       if (ev && eventStatus(ev) !== 'active') return; // gli eventi conclusi non si comprano più
 
-      const colCards = cardsDatabase.filter(c => c.collectionId === col.id);
-      if (colCards.length === 0) return;
-      const colOwned = colCards.filter(c => isUnlocked(c.id)).length;
+      const allColCards = cardsDatabase.filter(
+  c => c.collectionId === col.id
+);
+
+const colOwned = allColCards.filter(
+  c => isUnlocked(c.id)
+).length;
+
+const colCards = allColCards.filter(
+  c => !isUnlocked(c.id) && isObtainable(c)
+);
+
+if (colCards.length === 0) return;
 
       html += `
         <div class="shop-album-group">
           <h3 class="shop-album-title">
             <span>${col.title}${ev ? ` <em class="event-chip">⏳ ${formatEventLeft(ev)}</em>` : ''}</span>
-            <small>${colOwned} / ${colCards.length}</small>
+            <small>${colOwned} / ${allColCards.length}</small>
           </h3>
       `;
 
@@ -715,13 +725,12 @@ function renderSinglesShop() {
         const cards = group.cards.slice().sort((a, b) =>
           RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.id - b.id
         );
-        const owned = cards.filter(c => isUnlocked(c.id)).length;
 
         html += `
           <div class="shop-subgroup">
             <div class="shop-subgroup-head">
               <span>${group.label}</span>
-              <span class="shop-subgroup-count">${owned} / ${cards.length}</span>
+              <span class="shop-subgroup-count">${cards.length} da ottenere</span>
             </div>
             <div class="horizontal-shop-row" data-key="${col.id}-${index}">
               ${cards.map(createShopItemHTML).join('')}
@@ -734,7 +743,7 @@ function renderSinglesShop() {
     });
   }
 
-  container.innerHTML = html;
+  container.innerHTML = html ||   '<p class="shop-empty">Hai già tutte le card attualmente acquistabili! 💖</p>';
 
   container.querySelectorAll('.horizontal-shop-row').forEach(row => {
     if (prevRowScroll[row.dataset.key]) row.scrollLeft = prevRowScroll[row.dataset.key];
