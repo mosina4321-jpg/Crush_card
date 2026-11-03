@@ -26,7 +26,7 @@ const WHEEL_PRIZES = [
   { label: '20', credits: 20, type: 'credits', color: '#ff5fa8', weight: 20 },
   { label: '25', credits: 25, type: 'credits', color: '#2ecc71', weight: 12 },
   { label: '50', credits: 50, type: 'credits', color: '#e74c3c', weight: 6 },
-  { label: 'FREE CARD 🌟', type: 'card', color: '#f1c40f', weight: 2 }
+  { label: 'FREE CARD🌟', type: 'card', color: '#f1c40f', weight: 2 }
 ];
 
 /* ---------- STATO LOCALE DELL'APP ---------- */
@@ -52,7 +52,11 @@ let appStorageWarned = false;
     lastStreakClaimDate: '',
     quizDate: '',
     quizCardId: null,
-    quizOptions: null
+    quizOptions: null,
+    showcaseCardIds: [null, null, null],
+    pageRewards: [],
+    albumRewards: [],
+    wishlist: []
   };
   Object.keys(defaults).forEach(key => {
     if (userState[key] === undefined) userState[key] = defaults[key];
@@ -66,6 +70,26 @@ let appStorageWarned = false;
   // niente doppioni e niente id di card che non esistono più
   userState.unlockedCards = userState.unlockedCards.filter((id, i, arr) =>
     arr.indexOf(id) === i && cardsDatabase.some(c => c.id === id)
+  );
+
+  // vetrina: 3 posti. Se arrivi dalla vecchia "crush preferita", finisce nel primo posto
+  if (!Array.isArray(userState.showcaseCardIds)) userState.showcaseCardIds = [null, null, null];
+  while (userState.showcaseCardIds.length < 3) userState.showcaseCardIds.push(null);
+  userState.showcaseCardIds = userState.showcaseCardIds.slice(0, 3);
+  if (userState.favoriteCardId && userState.showcaseCardIds.every(id => !id)) {
+    userState.showcaseCardIds[0] = userState.favoriteCardId;
+  }
+  userState.showcaseCardIds = userState.showcaseCardIds.map(id =>
+    id && userState.unlockedCards.includes(id) ? id : null
+  );
+
+  if (!Array.isArray(userState.pageRewards)) userState.pageRewards = [];
+  if (!Array.isArray(userState.albumRewards)) userState.albumRewards = [];
+
+  // lista desideri: solo card che esistono e che non hai ancora
+  if (!Array.isArray(userState.wishlist)) userState.wishlist = [];
+  userState.wishlist = userState.wishlist.filter((id, i, arr) =>
+    arr.indexOf(id) === i && cardsDatabase.some(c => c.id === id) && !userState.unlockedCards.includes(id)
   );
 })();
 
@@ -90,6 +114,9 @@ function isUnlocked(cardId) { return userState.unlockedCards.includes(cardId); }
 function unlockCard(cardId) {
   if (isUnlocked(cardId)) return false;
   userState.unlockedCards.push(cardId);
+  // se era nei desideri, ora non serve più
+  userState.wishlist = userState.wishlist.filter(id => id !== cardId);
+  checkPageRewards(cardsDatabase.find(c => c.id === cardId).collectionId);
   return true;
 }
 /* Sceglie una rarità in base ai pesi, es. { COMUNE: 70, RARA: 25, LEGGENDARIA: 5 } */
@@ -102,6 +129,119 @@ function rollRarity(odds) {
     r -= odds[key];
   }
   return keys[0];
+}
+
+/* ==========================================================================
+   EVENTI A TEMPO + LISTA DESIDERI
+   ========================================================================== */
+/* eventsDatabase sta in script.js. Se non c'è ancora, l'app funziona lo stesso (nessun evento). */
+const EVENTS = (typeof eventsDatabase !== 'undefined') ? eventsDatabase : [];
+
+function parseEventDate(str, endOfDay) {
+  const [y, m, d] = String(str).split('-').map(Number);
+  return endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+function eventStatus(ev) {
+  const now = Date.now();
+  if (now < parseEventDate(ev.start, false).getTime()) return 'upcoming';
+  if (now > parseEventDate(ev.end, true).getTime()) return 'ended';
+  return 'active';
+}
+function eventOfCollection(collectionId) { return EVENTS.find(e => e.collectionId === collectionId) || null; }
+function eventOfCard(card) { return eventOfCollection(card.collectionId); }
+function eventOfPack(pack) { return EVENTS.find(e => e.packId === pack.id) || null; }
+
+/* una card di evento si può ottenere solo mentre l'evento è in corso */
+function isObtainable(card) {
+  const ev = eventOfCard(card);
+  return !ev || eventStatus(ev) === 'active';
+}
+
+function formatEventLeft(ev) {
+  const ms = Math.max(0, parseEventDate(ev.end, true).getTime() - Date.now());
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  const mins = Math.floor((ms % 3600000) / 60000);
+  if (days >= 1) return `${days}g ${hours}h`;
+  if (hours >= 1) return `${hours}h ${mins}m`;
+  return `${Math.max(mins, 1)}m`;
+}
+
+/* un album di un evento concluso resta visibile solo se hai almeno una delle sue card */
+function isCollectionVisible(col) {
+  const ev = eventOfCollection(col.id);
+  if (!ev) return true;
+  const status = eventStatus(ev);
+  if (status === 'active') return true;
+  if (status === 'ended') return cardsDatabase.some(c => c.collectionId === col.id && isUnlocked(c.id));
+  return false;
+}
+
+/* le card di eventi conclusi non fanno abbassare la percentuale di completamento */
+function completionTotal() {
+  return cardsDatabase.filter(c => !eventOfCard(c) || isUnlocked(c.id)).length;
+}
+
+function renderEventBanner() {
+  const box = byId('event-banner');
+  if (!box) return;
+
+  const active = EVENTS.filter(e => eventStatus(e) === 'active');
+  let html = active.map(ev => `
+    <div class="event-banner active" onclick="openEventShop()">
+      <div class="event-banner-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+      <div class="event-banner-text">
+        <strong>${ev.title}</strong>
+        <span>Evento a tempo · finisce tra ${formatEventLeft(ev)}</span>
+      </div>
+      <i class="fa-solid fa-chevron-right"></i>
+    </div>
+  `).join('');
+
+  if (!active.length) {
+    const soon = EVENTS
+      .filter(e => eventStatus(e) === 'upcoming')
+      .map(e => ({ ev: e, days: Math.ceil((parseEventDate(e.start, false).getTime() - Date.now()) / 86400000) }))
+      .filter(x => x.days <= 7)
+      .sort((a, b) => a.days - b.days)[0];
+    if (soon) {
+      html = `
+        <div class="event-banner soon">
+          <div class="event-banner-icon"><i class="fa-solid fa-gift"></i></div>
+          <div class="event-banner-text">
+            <strong>${soon.ev.title}</strong>
+            <span>In arrivo ${soon.days <= 1 ? 'domani' : `tra ${soon.days} giorni`}!</span>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  box.innerHTML = html;
+  box.classList.toggle('hidden', !html);
+}
+
+function openEventShop() {
+  const navBtn = document.querySelector(".nav-item[onclick*='sec-shop']");
+  switchTab('sec-shop', navBtn);
+  switchShopTab('packs');
+}
+
+/* ---------- LISTA DESIDERI ---------- */
+function isWished(cardId) { return userState.wishlist.includes(cardId); }
+
+function toggleWishlist(cardId) {
+  const card = cardsDatabase.find(c => c.id === cardId);
+  if (!card || isUnlocked(cardId) || !isObtainable(card)) return;
+
+  const index = userState.wishlist.indexOf(cardId);
+  if (index >= 0) userState.wishlist.splice(index, 1);
+  else userState.wishlist.push(cardId);
+  saveProgress();
+
+  if (currentCollectionId) renderAlbum();
+  renderSinglesShop();
+  if (index < 0) missionEvent('wish');
 }
 
 function refreshAllViews() {
@@ -168,12 +308,20 @@ function switchTab(screenId, element) {
   if (screenId === 'sec-album') renderCollections();
   if (screenId === 'sec-shop') renderShop();
   if (screenId === 'sec-profile') updateUI();
+  if (screenId === 'sec-shop') {
+    userState.offerSeen = todayKey();
+    saveProgress();
+    renderDailyOffer();
+    updateReadyDots();
+  }
 }
 
 /* ---------- CARD ---------- */
 function createCardHTML(card) {
+  const eventTag = eventOfCard(card) ? '<span class="card-event-tag"><i class="fa-solid fa-star"></i></span>' : '';
   return `
     <div class="collectible-card ${card.rarity}" style="background-image: url('${card.img}')">
+      ${eventTag}
       <div class="card-info-overlay">
         <div class="card-title-name">${card.name}</div>
         <div class="card-subtitle">${card.category}</div>
@@ -198,7 +346,7 @@ function renderCollections() {
   const container = byId('collections-list');
   if (!container) return;
 
-  container.innerHTML = collectionsDatabase.map((col, i) => {
+  container.innerHTML = collectionsDatabase.filter(isCollectionVisible).map((col, i) => {
     const colCards = cardsDatabase.filter(c => c.collectionId === col.id);
     const unlocked = colCards.filter(c => isUnlocked(c.id)).length;
     const total = colCards.length;
@@ -206,11 +354,17 @@ function renderCollections() {
     const complete = total > 0 && unlocked === total;
     const hue = (i * 47 + 320) % 360; // colore di riserva se la foto non carica
 
+    const ev = eventOfCollection(col.id);
+    const ribbon = ev
+      ? `<span class="album-book-ribbon ${eventStatus(ev)}">${eventStatus(ev) === 'active' ? '⏳ ' + formatEventLeft(ev) : 'ARCHIVIO'}</span>`
+      : '';
+
     return `
-      <button class="album-book ${complete ? 'complete' : ''}" style="--i:${i}; --hue:${hue}" onclick="openCollection('${col.id}')">
+      <button class="album-book ${complete ? 'complete' : ''} ${ev ? 'event' : ''}" style="--i:${i}; --hue:${hue}" onclick="openCollection('${col.id}')">
         <span class="album-book-pages"></span>
         <span class="album-book-cover" style="background-image: url('${col.coverImg}')">
           <span class="album-book-spine"></span>
+          ${ribbon}
           <span class="album-book-badge">${complete ? '<i class="fa-solid fa-crown"></i>' : percent + '%'}</span>
           <span class="album-book-info">
             <span class="album-book-title">${col.title}</span>
@@ -229,6 +383,7 @@ function openCollection(collectionId) {
   byId('album-collections-view').classList.add('hidden');
   byId('album-cards-view').classList.remove('hidden');
   renderAlbum();
+  missionEvent('album');
 }
 
 function closeCollection() {
@@ -261,7 +416,16 @@ function renderAlbum() {
     if (isUnlocked(card.id)) {
       return `<div onclick="openZoomCard(${card.id})">${createCardHTML(card)}</div>`;
     }
-    return createLockedCardHTML(card, card.name);
+    if (!isObtainable(card)) {
+      return `<div class="wish-slot gone">${createLockedCardHTML(card, card.name)}</div>`;
+    }
+    const wished = isWished(card.id);
+    return `
+      <div class="wish-slot ${wished ? 'wished' : ''}" onclick="toggleWishlist(${card.id})">
+        ${createLockedCardHTML(card, card.name)}
+        <span class="wish-heart"><i class="${wished ? 'fa-solid' : 'fa-regular'} fa-heart"></i></span>
+      </div>
+    `;
   }).join('');
 }
 
@@ -290,6 +454,33 @@ function prevPage() {
   }
 }
 
+/* Retro della card: colore della rarità + nome, categoria, collezione e numero */
+const RARITY_ICON = { COMUNE: 'fa-star', RARA: 'fa-gem', LEGGENDARIA: 'fa-crown' };
+
+function createCardBackHTML(card) {
+  const collection = collectionsDatabase.find(c => c.id === card.collectionId);
+  const inCollection = cardsDatabase.filter(c => c.collectionId === card.collectionId);
+  const number = inCollection.findIndex(c => c.id === card.id) + 1;
+  const len = card.name.length;
+  const nameSize = len > 12 ? 17 : (len > 8 ? 21 : 26); // i nomi lunghi si rimpiccioliscono
+
+  return `
+    <div class="zoom-card-face zoom-card-back ${card.rarity}">
+      <div class="back-frame">
+        <div class="back-brand">CRUSH CARDS</div>
+        <div class="back-emblem"><i class="fa-solid ${RARITY_ICON[card.rarity] || 'fa-star'}"></i></div>
+        <div class="back-name" style="font-size: ${nameSize}px">${card.name}</div>
+        <div class="back-category">${card.category}</div>
+        <div class="back-divider"></div>
+        <div class="back-rarity">${RARITY_LABEL[card.rarity] || card.rarity}</div>
+        ${eventOfCard(card) ? '<div class="back-event"><i class="fa-solid fa-star"></i> EDIZIONE LIMITATA</div>' : ''}
+        <div class="back-collection">${collection ? collection.title : ''}</div>
+        <div class="back-number">N° ${String(number).padStart(2, '0')} / ${inCollection.length}</div>
+      </div>
+    </div>
+  `;
+}
+
 /* ---------- ZOOM CARD (flip + inclinazione 3D) ---------- */
 function openZoomCard(cardId) {
   const card = cardsDatabase.find(c => c.id === cardId);
@@ -300,11 +491,7 @@ function openZoomCard(cardId) {
   container.style.transform = '';
   container.innerHTML = `
     <div class="zoom-card-face zoom-card-front">${createCardHTML(card)}</div>
-    <div class="zoom-card-face zoom-card-back">
-      <i class="fa-solid fa-wand-magic-sparkles"></i>
-      <h3>CRUSH CARDS</h3>
-      <p>Official Collection</p>
-    </div>
+    ${createCardBackHTML(card)}
   `;
 
   byId('zoom-modal').classList.remove('hidden');
@@ -373,14 +560,21 @@ function renderPacks() {
   const container = byId('packs-grid');
   if (!container) return;
 
-  container.innerHTML = packsDatabase.map(pack => {
+  // le buste di un evento si vedono solo mentre l'evento è in corso, e vanno per prime
+  const visible = packsDatabase
+    .filter(pack => { const ev = eventOfPack(pack); return !ev || eventStatus(ev) === 'active'; })
+    .sort((a, b) => (eventOfPack(b) ? 1 : 0) - (eventOfPack(a) ? 1 : 0));
+
+  container.innerHTML = visible.map(pack => {
+    const ev = eventOfPack(pack);
     const canAfford = userState.credits >= pack.price;
     const left = lockedCardsOfPack(pack).length;
     const done = left === 0;
     const countLabel = done ? 'Completa ✓' : (left < pack.cardCount ? `${left} card` : `${pack.cardCount} card`);
     return `
-      <div class="pack-card ${done ? 'pack-done' : ''}" onclick="promptBuyPack('${pack.id}')">
+      <div class="pack-card ${done ? 'pack-done' : ''} ${ev ? 'pack-event' : ''}" onclick="promptBuyPack('${pack.id}')">
         <div class="pack-art" style="--pack-cover: url('${pack.cover}')">
+          ${ev ? `<span class="pack-event-tag">⏳ ${formatEventLeft(ev)}</span>` : ''}
           <span class="pack-count">${countLabel}</span>
         </div>
         <h4>${pack.name}</h4>
@@ -433,10 +627,15 @@ function createShopItemHTML(card) {
   }
 
   const canAfford = userState.credits >= card.price;
+  const wished = isWished(card.id);
   return `
-    <div class="shop-category-card-item" onclick="promptBuyCard(${card.id})">
+    <div class="shop-category-card-item ${wished ? 'wished' : ''}" onclick="promptBuyCard(${card.id})">
       <div class="shop-card-preview-box">
         ${createLockedCardHTML(card, RARITY_LABEL[card.rarity] || card.rarity)}
+        <button class="wish-btn ${wished ? 'on' : ''}" aria-label="Aggiungi ai desideri"
+                onclick="event.stopPropagation(); toggleWishlist(${card.id})">
+          <i class="${wished ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
+        </button>
         <div class="card-badge-overlay price ${canAfford ? '' : 'cant-afford'}">
           <i class="fa-solid fa-coins"></i> ${card.price}
         </div>
@@ -449,9 +648,32 @@ function createShopItemHTML(card) {
   `;
 }
 
+let appShopFilter = 'all'; // 'all' = tutte le card · 'wish' = solo i desideri
+
+function setShopFilter(filter) {
+  appShopFilter = filter;
+  renderSinglesShop();
+}
+
+function renderShopFilter() {
+  const box = byId('shop-filter');
+  if (!box) return;
+  const wishCount = userState.wishlist.filter(id => {
+    const card = cardsDatabase.find(c => c.id === id);
+    return card && isObtainable(card);
+  }).length;
+  box.innerHTML = `
+    <button class="shop-filter-btn ${appShopFilter === 'all' ? 'active' : ''}" onclick="setShopFilter('all')">Tutte</button>
+    <button class="shop-filter-btn ${appShopFilter === 'wish' ? 'active' : ''}" onclick="setShopFilter('wish')">
+      <i class="fa-solid fa-heart"></i> Desideri (${wishCount})
+    </button>
+  `;
+}
+
 function renderSinglesShop() {
   const container = byId('shop-categories-list');
   if (!container) return;
+  renderShopFilter();
 
   // ricordo lo scroll, così dopo un acquisto la pagina non "salta"
   const shopScreen = byId('sec-shop');
@@ -463,40 +685,54 @@ function renderSinglesShop() {
   });
 
   let html = '';
-  collectionsDatabase.forEach(col => {
-    const colCards = cardsDatabase.filter(c => c.collectionId === col.id);
-    if (colCards.length === 0) return;
-    const colOwned = colCards.filter(c => isUnlocked(c.id)).length;
 
-    html += `
-      <div class="shop-album-group">
-        <h3 class="shop-album-title">
-          <span>${col.title}</span>
-          <small>${colOwned} / ${colCards.length}</small>
-        </h3>
-    `;
+  if (appShopFilter === 'wish') {
+    const wished = userState.wishlist
+      .map(id => cardsDatabase.find(c => c.id === id))
+      .filter(c => c && !isUnlocked(c.id) && isObtainable(c))
+      .sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.id - b.id);
+    html = wished.length
+      ? `<div class="shop-wish-grid">${wished.map(createShopItemHTML).join('')}</div>`
+      : '<p class="shop-empty">Nessun desiderio ancora. Tocca il cuore sulle card che ti mancano, nell\'album o qui nello shop!</p>';
+  } else {
+    collectionsDatabase.forEach(col => {
+      const ev = eventOfCollection(col.id);
+      if (ev && eventStatus(ev) !== 'active') return; // gli eventi conclusi non si comprano più
 
-    buildShopGroups(colCards).forEach((group, index) => {
-      const cards = group.cards.slice().sort((a, b) =>
-        RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.id - b.id
-      );
-      const owned = cards.filter(c => isUnlocked(c.id)).length;
+      const colCards = cardsDatabase.filter(c => c.collectionId === col.id);
+      if (colCards.length === 0) return;
+      const colOwned = colCards.filter(c => isUnlocked(c.id)).length;
 
       html += `
-        <div class="shop-subgroup">
-          <div class="shop-subgroup-head">
-            <span>${group.label}</span>
-            <span class="shop-subgroup-count">${owned} / ${cards.length}</span>
-          </div>
-          <div class="horizontal-shop-row" data-key="${col.id}-${index}">
-            ${cards.map(createShopItemHTML).join('')}
-          </div>
-        </div>
+        <div class="shop-album-group">
+          <h3 class="shop-album-title">
+            <span>${col.title}${ev ? ` <em class="event-chip">⏳ ${formatEventLeft(ev)}</em>` : ''}</span>
+            <small>${colOwned} / ${colCards.length}</small>
+          </h3>
       `;
-    });
 
-    html += '</div>';
-  });
+      buildShopGroups(colCards).forEach((group, index) => {
+        const cards = group.cards.slice().sort((a, b) =>
+          RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity] || a.id - b.id
+        );
+        const owned = cards.filter(c => isUnlocked(c.id)).length;
+
+        html += `
+          <div class="shop-subgroup">
+            <div class="shop-subgroup-head">
+              <span>${group.label}</span>
+              <span class="shop-subgroup-count">${owned} / ${cards.length}</span>
+            </div>
+            <div class="horizontal-shop-row" data-key="${col.id}-${index}">
+              ${cards.map(createShopItemHTML).join('')}
+            </div>
+          </div>
+        `;
+      });
+
+      html += '</div>';
+    });
+  }
 
   container.innerHTML = html;
 
@@ -517,13 +753,20 @@ function promptBuyPack(packId) {
   const pack = packsDatabase.find(p => p.id === packId);
   if (!pack) return;
 
+  const packEvent = eventOfPack(pack);
+  if (packEvent && eventStatus(packEvent) !== 'active') {
+    showPopup('Evento concluso ⌛', 'Questa busta non è più disponibile: aspetta il prossimo evento!', 'fa-solid fa-hourglass-end');
+    renderPacks();
+    return;
+  }
+
   const left = lockedCardsOfPack(pack).length;
   if (left === 0) {
     showPopup('Collezione completa! 👑', 'Hai già tutte le card di questa collezione: non ci sono più card da scoprire in questa busta.', 'fa-solid fa-crown');
     return;
   }
   if (userState.credits < pack.price) {
-    showPopup('Crediti insufficienti! 💸', 'Gioca a Indovina la Crush, gira la ruota o riscatta la streak per ottenere altri crediti!', 'fa-solid fa-coins');
+    showPopup('Crediti insufficienti! 💸', 'Gioca a Trova la Coppia, gira la ruota o riscatta la streak per ottenere altri crediti!', 'fa-solid fa-coins');
     return;
   }
   pendingPurchaseCardId = null;
@@ -539,6 +782,11 @@ function promptBuyCard(cardId) {
   const card = cardsDatabase.find(c => c.id === cardId);
   if (!card || isUnlocked(cardId)) return;
 
+  if (!isObtainable(card)) {
+    showPopup('Evento concluso ⌛', 'Questa card era disponibile solo per un periodo limitato.', 'fa-solid fa-hourglass-end');
+    renderSinglesShop();
+    return;
+  }
   if (userState.credits < card.price) {
     showPopup('Crediti insufficienti! 💸', 'Ottieni altri crediti con i mini-giochi, la ruota o la streak!', 'fa-solid fa-coins');
     return;
@@ -549,6 +797,7 @@ function promptBuyCard(cardId) {
 }
 
 function cancelBuyCard() {
+  offerPurchasePending = false;
   pendingPurchaseCardId = null;
   pendingPurchasePackId = null;
   byId('confirm-buy-modal').classList.add('hidden');
@@ -557,6 +806,7 @@ function cancelBuyCard() {
 function confirmBuyCard() {
   const packId = pendingPurchasePackId;
   const cardId = pendingPurchaseCardId;
+  const discounted = offerPurchasePending;
   cancelBuyCard();
 
   if (packId) {
@@ -571,15 +821,19 @@ function confirmBuyCard() {
     return;
   }
 
-  if (cardId) {
-    const card = cardsDatabase.find(c => c.id === cardId);
-    if (!card || isUnlocked(cardId) || userState.credits < card.price) return;
-    userState.credits -= card.price;
-    unlockCard(card.id);
-    saveProgress();
-    showReward(card);
-    refreshAllViews();
-  }
+  const card = cardsDatabase.find(c => c.id === cardId);
+  if (!card || isUnlocked(card.id) || !isObtainable(card)) return;
+  if (discounted && (!offerAvailable() || ensureDailyOffer().cardId !== card.id)) return;
+  const price = discounted ? offerPrice(card) : card.price;
+  if (userState.credits < price) return;
+
+  userState.credits -= price;
+  unlockCard(card.id);
+  if (discounted) userState.dailyOffer.bought = true;
+  saveProgress();
+  showReward(card);
+  missionEvent('buy');
+  refreshAllViews();
 }
 
 /* ---------- APERTURA BUSTE ---------- */
@@ -594,7 +848,7 @@ function packPrice(pack) {
 function lockedCardsOfPack(pack) {
   // una busta può pescare da una collezione (collectionId) o da più collezioni (collectionIds)
   const ids = pack.collectionIds || [pack.collectionId];
-  return cardsDatabase.filter(c => ids.includes(c.collectionId) && !isUnlocked(c.id));
+  return cardsDatabase.filter(c => ids.includes(c.collectionId) && !isUnlocked(c.id) && isObtainable(c));
 }
 
 function pickPackCards(pack) {
@@ -633,6 +887,7 @@ function openPackSequence(pack, paid) {
   byId('pack-revealed-cards').innerHTML = '';
   byId('btn-collect-pack').classList.add('hidden');
   byId('pack-opening-modal').classList.remove('hidden');
+  missionEvent('pack');
 }
 
 function unpackSequence() {
@@ -648,6 +903,7 @@ function unpackSequence() {
 
   container.classList.remove('hidden');
   byId('btn-collect-pack').classList.remove('hidden');
+  if (hasLegendary(activePackCards.map(entry => entry.card))) legendaryEffect();
 }
 
 function closePackModal() {
@@ -674,7 +930,7 @@ function claimFreeCardAnimation() {
     return;
   }
 
-  const lockedCards = cardsDatabase.filter(c => !isUnlocked(c.id));
+  const lockedCards = cardsDatabase.filter(c => !isUnlocked(c.id) && isObtainable(c));
   if (lockedCards.length === 0) {
     showPopup('Incredibile! 👑', 'Hai già sbloccato TUTTE le card dell\'album!', 'fa-solid fa-crown');
     return;
@@ -705,6 +961,7 @@ function claimFreeCardAnimation() {
 }
 
 function showReward(card) {
+  legendaryShown = false;
   byId('modal-card-front').innerHTML = createCardHTML(card);
   const closeBtn = byId('btn-close-reward');
   if (closeBtn) closeBtn.style.display = 'none';
@@ -719,6 +976,11 @@ function revealScratchCard() {
   if (canvas) canvas.style.display = 'none';
   const closeBtn = byId('btn-close-reward');
   if (closeBtn) closeBtn.style.display = 'block';
+  const front = byId('modal-card-front');
+  if (!legendaryShown && front && front.querySelector('.collectible-card.LEGGENDARIA')) {
+    legendaryShown = true;
+    legendaryEffect();
+  }
 }
 
 function setupScratchCanvas() {
@@ -771,17 +1033,18 @@ function setupScratchCanvas() {
     ctx.fill();
 
     moves++;
-    if (moves % 6 === 0 && clearedPercent() > 40) revealScratchCard();
+    if (moves % 6 === 0 && clearedPercent() > 50) revealScratchCard();
   }
 
   canvas.onpointerdown = (e) => { scratching = true; scratch(e); };
   canvas.onpointermove = scratch;
-  canvas.onpointerup = () => { scratching = false; if (clearedPercent() > 40) revealScratchCard(); };
+  canvas.onpointerup = () => { scratching = false; if (clearedPercent() > 50) revealScratchCard(); };
   canvas.onpointercancel = () => { scratching = false; };
   canvas.onpointerleave = () => { scratching = false; };
 }
 
 function updateTimer() {
+  renderEventBanner();
   const remaining = FREE_CARD_COOLDOWN - (Date.now() - userState.lastFreeClaim);
   const box = byId('card-flip-box');
   const countdown = byId('countdown');
@@ -796,6 +1059,8 @@ function updateTimer() {
     if (countdown) countdown.innerText = `${formatRemaining(remaining)} rimanenti`;
     if (timerText) timerText.innerText = 'Disponibile ogni 3 giorni';
   }
+  renderDailyOffer();
+  updateReadyDots();
 }
 
 /* ==========================================================================
@@ -829,7 +1094,12 @@ function claimDailyStreak() {
   const message = weekly
     ? `🎉 Settimana completata! Giorno ${userState.streakDays}: +${streakBase(userState.streakDays)} crediti più ${STREAK_WEEKLY_BONUS} di bonus!`
     : `Giorno ${userState.streakDays} della tua streak: hai vinto +${earned} crediti!`;
-  showPopup('Streak giornaliera! 🔥', message, 'fa-solid fa-fire');
+  showToast(
+  'Streak giornaliera!',
+  message,
+  'fa-solid fa-fire'
+);
+  missionEvent('streak');
 }
 
 function updateStreakUI() {
@@ -850,85 +1120,201 @@ function updateStreakUI() {
   }
 }
 
-/* ==========================================================================
-   MINI-GIOCO: INDOVINA LA CRUSH
-   ========================================================================== */
-/* La card del giorno viene salvata: chiudere e riaprire il gioco non permette di "ritirare" */
-function getDailyQuiz() {
-  if (userState.quizDate === todayKey() && userState.quizCardId && Array.isArray(userState.quizOptions)) {
-    const saved = cardsDatabase.find(c => c.id === userState.quizCardId);
-    if (saved) return { card: saved, options: userState.quizOptions };
-  }
+/* ---------- MINIGIOCO: TROVA LA COPPIA ---------- */
 
-  const pool = cardsDatabase.filter(c => QUIZ_CATEGORIES.includes(c.category));
-  if (pool.length === 0) return null;
+const MEMORY_REWARDS = {
+  6: 20,
+  8: 30,
+  12: 40
+};
 
-  const card = randomItem(pool);
-  const otherNames = [...new Set(pool.map(c => c.name))].filter(n => n !== card.name);
-  const options = shuffle([card.name, ...shuffle(otherNames).slice(0, 3)]);
+const MEMORY_BONUS = 10;
 
-  userState.quizDate = todayKey();
-  userState.quizCardId = card.id;
-  userState.quizOptions = options;
-  saveProgress();
-  return { card: card, options: options };
-}
+let memoryPairs = [];
+let memoryFlipped = [];
+let memoryLock = false;
+let memoryFound = 0;
+let memoryErrors = 0;
+let memoryTotalPairs = 6;
 
-function openQuizModal() {
+function openMemoryGame() {
   if (userState.lastQuizPlayed === todayKey()) {
-    showPopup('Già giocato! 🕵️', 'Hai già giocato a Indovina la Crush oggi. Torna domani per una nuova sfida!', 'fa-solid fa-user-secret');
+    showPopup(
+      'Già giocata!',
+      'Hai già giocato a Trova la Coppia oggi. Torna domani!',
+      'fa-solid fa-heart'
+    );
     return;
   }
 
-  const quiz = getDailyQuiz();
-  if (!quiz) return;
-  currentQuizCard = quiz.card;
-
-  const body = byId('quiz-body');
-  body.innerHTML = `
-    <div class="quiz-photo-wrap">
-      <div id="quiz-photo" class="quiz-photo" style="background-image: url('${quiz.card.img}')"></div>
-    </div>
-    <p class="quiz-question">Chi si nasconde dietro questa foto sfocata?</p>
-    <div id="quiz-options" class="quiz-options"></div>
-  `;
-
-  const optionsBox = byId('quiz-options');
-  quiz.options.forEach(name => {
-    const btn = document.createElement('button');
-    btn.className = 'quiz-option';
-    btn.textContent = name;
-    btn.addEventListener('click', () => answerQuiz(name, btn));
-    optionsBox.appendChild(btn);
-  });
-
+  showMemoryDifficulty();
   byId('quiz-modal').classList.remove('hidden');
 }
 
-function answerQuiz(selectedName, btn) {
-  if (!currentQuizCard || userState.lastQuizPlayed === todayKey()) return;
+function showMemoryDifficulty() {
+  byId('memory-difficulty-view').classList.remove('hidden');
+  byId('memory-game-view').classList.add('hidden');
+  byId('memory-result-view').classList.add('hidden');
+}
 
-  const correct = selectedName === currentQuizCard.name;
+function startMemoryGame(pairs) {
+  if (userState.lastQuizPlayed === todayKey()) {
+    showPopup(
+      'Già giocata!',
+      'Hai già giocato a Trova la Coppia oggi. Torna domani!',
+      'fa-solid fa-heart'
+    );
+    return;
+  }
+
+  const availableCards = cardsDatabase.filter(card =>
+    isObtainable(card)
+  );
+
+  if (availableCards.length < pairs) {
+    showPopup(
+      'Non abbastanza card',
+      'Al momento non ci sono abbastanza card disponibili per questa difficoltà.',
+      'fa-solid fa-triangle-exclamation'
+    );
+    return;
+  }
+
+  memoryTotalPairs = pairs;
+  memoryFound = 0;
+  memoryErrors = 0;
+  memoryFlipped = [];
+  memoryLock = false;
+
+  const chosen = shuffle(availableCards).slice(0, pairs);
+
+  memoryPairs = shuffle(
+  chosen.flatMap(card => [
+    { cardId: card.id, card: card },
+    { cardId: card.id, card: card }
+  ])
+);
+
+  byId('memory-difficulty-view').classList.add('hidden');
+  byId('memory-result-view').classList.add('hidden');
+  byId('memory-game-view').classList.remove('hidden');
+
+  renderMemoryGrid();
+  updateMemoryStatus();
+}
+
+function renderMemoryGrid() {
+  const grid = byId('memory-grid');
+  if (!grid) return;
+
+  grid.innerHTML = memoryPairs.map((item, index) => `
+    <button
+      class="memory-card"
+      data-index="${index}"
+      data-card-id="${item.cardId}"
+      onclick="flipMemoryCard(${index})"
+    >
+      <span class="memory-card-inner">
+        <span class="memory-card-back">
+          <i class="fa-solid fa-heart"></i>
+        </span>
+        <span
+          class="memory-card-front"
+          style="background-image:url('${item.card.img}')"
+        ></span>
+      </span>
+    </button>
+  `).join('');
+}
+
+function flipMemoryCard(index) {
+  if (memoryLock) return;
+
+  const cardEl = document.querySelector(
+    `.memory-card[data-index="${index}"]`
+  );
+
+  if (!cardEl) return;
+  if (cardEl.classList.contains('matched')) return;
+  if (memoryFlipped.some(item => item.index === index)) return;
+  if (memoryFlipped.length >= 2) return;
+
+  cardEl.classList.add('flipped');
+  memoryFlipped.push({
+    index,
+    cardId: memoryPairs[index].cardId,
+    element: cardEl
+  });
+
+  if (memoryFlipped.length === 2) {
+    memoryLock = true;
+    setTimeout(checkMemoryMatch, 700);
+  }
+}
+
+function checkMemoryMatch() {
+  const [first, second] = memoryFlipped;
+
+  if (first.cardId === second.cardId) {
+    first.element.classList.add('matched');
+    second.element.classList.add('matched');
+    memoryFound++;
+  } else {
+    memoryErrors++;
+
+    first.element.classList.add('wrong');
+    second.element.classList.add('wrong');
+
+    setTimeout(() => {
+      first.element.classList.remove('flipped', 'wrong');
+      second.element.classList.remove('flipped', 'wrong');
+    }, 550);
+  }
+
+  memoryFlipped = [];
+  memoryLock = false;
+
+  updateMemoryStatus();
+
+  if (memoryFound === memoryTotalPairs) {
+    finishMemoryGame();
+  }
+}
+
+function updateMemoryStatus() {
+  byId('memory-pairs-found').innerText =
+    `Coppie: ${memoryFound}/${memoryTotalPairs}`;
+
+  byId('memory-errors').innerText =
+    `Errori: ${memoryErrors}`;
+}
+
+function finishMemoryGame() {
   userState.lastQuizPlayed = todayKey();
-  if (correct) userState.credits += QUIZ_REWARD;
+
+  const baseReward = MEMORY_REWARDS[memoryTotalPairs];
+  const noMistakeBonus = memoryErrors === 0 ? MEMORY_BONUS : 0;
+  const totalReward = baseReward + noMistakeBonus;
+
+  userState.credits += totalReward;
+
   saveProgress();
   updateUI();
+  missionEvent('quiz');
 
-  byId('quiz-photo').classList.add('revealed');
-  byId('quiz-options').querySelectorAll('.quiz-option').forEach(option => {
-    option.disabled = true;
-    if (option.textContent === currentQuizCard.name) option.classList.add('correct');
-  });
-  if (!correct) btn.classList.add('wrong');
+  byId('memory-game-view').classList.add('hidden');
+  byId('memory-result-view').classList.remove('hidden');
 
-  setTimeout(() => {
-    closeModal('quiz-modal');
-    if (correct) {
-      showPopup('Risposta esatta! 🎉', `Complimenti! Hai indovinato la Crush e vinto +${QUIZ_REWARD} crediti!`, 'fa-solid fa-trophy');
-    } else {
-      showPopup('Peccato! 😢', `La risposta giusta era ${currentQuizCard.name}. Riprova domani!`, 'fa-solid fa-circle-xmark');
-    }
-  }, 1800);
+  byId('memory-result-title').innerText = 'Hai trovato tutte le coppie!';
+  byId('memory-result-text').innerText =
+    memoryErrors === 0
+      ? 'Perfetto: nessun errore!'
+      : `Hai completato il gioco con ${memoryErrors} errori.`;
+
+  byId('memory-reward-text').innerText =
+    memoryErrors === 0
+      ? `+${baseReward} crediti\nBonus senza errori: +${MEMORY_BONUS} crediti\nTotale: +${totalReward} crediti`
+      : `+${totalReward} crediti`;
 }
 
 /* ==========================================================================
@@ -951,46 +1337,123 @@ function openWheelModal() {
 function drawWheel() {
   const canvas = byId('wheel-canvas');
   if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return;
 
   const count = WHEEL_PRIZES.length;
   const arc = (2 * Math.PI) / count;
-  const radius = canvas.width / 2;
+  const size = canvas.width;
+  const cx = size / 2, cy = size / 2;
+  const raggio = size / 2 - 14;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, size, size);
 
+  // Segmenti con sfumatura radiale
   WHEEL_PRIZES.forEach((prize, i) => {
-    const angle = i * arc;
+    const inizio = i * arc;
+    const fine = inizio + arc;
+    const grad = ctx.createRadialGradient(cx, cy, 20, cx, cy, raggio);
+    grad.addColorStop(0, prize.color + 'cc');
+    grad.addColorStop(1, prize.color);
     ctx.beginPath();
-    ctx.fillStyle = prize.color;
-    ctx.moveTo(radius, radius);
-    ctx.arc(radius, radius, radius - 5, angle, angle + arc);
-    ctx.lineTo(radius, radius);
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, raggio, inizio, fine);
+    ctx.closePath();
+    ctx.fillStyle = grad;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(15,8,22,0.55)';
+    ctx.lineWidth = 3;
     ctx.stroke();
+  });
+
+  // Bordo dorato esterno
+  ctx.beginPath();
+  ctx.arc(cx, cy, raggio + 6, 0, 2 * Math.PI);
+  ctx.lineWidth = 8;
+  const bordo = ctx.createLinearGradient(0, 0, size, size);
+  bordo.addColorStop(0, '#ffd84d');
+  bordo.addColorStop(0.5, '#fff3b0');
+  bordo.addColorStop(1, '#d4a017');
+  ctx.strokeStyle = bordo;
+  ctx.shadowColor = 'rgba(255,216,77,0.6)';
+  ctx.shadowBlur = 18;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Lucine sul bordo
+  for (let i = 0; i < 16; i++) {
+    const ang = (i / 16) * 2 * Math.PI;
+    const lx = cx + Math.cos(ang) * (raggio + 6);
+    const ly = cy + Math.sin(ang) * (raggio + 6);
+    ctx.beginPath();
+    ctx.arc(lx, ly, 3.5, 0, 2 * Math.PI);
+    ctx.fillStyle = i % 2 === 0 ? '#fff' : '#ffd84d';
+    ctx.shadowColor = '#ffd84d';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+    // Testi dei premi
+  WHEEL_PRIZES.forEach((prize, i) => {
+    const ang = i * arc + arc / 2;
+    const isCard = prize.type === 'card';
 
     ctx.save();
-    ctx.translate(radius, radius);
-    ctx.rotate(angle + arc / 2);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.shadowColor = 'rgba(0,0,0,0.55)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(prize.label, radius - 18, 5);
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+
+    const posizioneTesto = (30 + raggio) / 2 + 5;
+    const spazioTesto = raggio - 30 - 24;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(30, 8, 45, 0.65)';
+    ctx.shadowBlur = 3;
+
+    if (isCard) {
+      let dimensione = 13;
+      ctx.font = 'bold ' + dimensione + 'px Outfit, sans-serif';
+
+      while (
+        ctx.measureText('FREE CARD').width > spazioTesto &&
+        dimensione > 9
+      ) {
+        dimensione--;
+        ctx.font = 'bold ' + dimensione + 'px Outfit, sans-serif';
+      }
+
+      ctx.fillText('FREE CARD', posizioneTesto, 0);
+    } else {
+      ctx.font = 'bold 15px Outfit, sans-serif';
+      ctx.fillText(prize.label, posizioneTesto, 0);
+    }
+
     ctx.restore();
   });
 
+  // Mozzo centrale
   ctx.beginPath();
-  ctx.arc(radius, radius, 24, 0, 2 * Math.PI);
-  ctx.fillStyle = '#120A18';
+  ctx.arc(cx, cy, 30, 0, 2 * Math.PI);
+  const mozzo = ctx.createRadialGradient(cx, cy - 8, 4, cx, cy, 30);
+  mozzo.addColorStop(0, '#3a1f4d');
+  mozzo.addColorStop(1, '#120a18');
+  ctx.fillStyle = mozzo;
   ctx.fill();
-  ctx.strokeStyle = '#ff5fa8'; // il canvas non legge le variabili CSS
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#ff5fa8';
+  ctx.shadowColor = 'rgba(255,95,168,0.6)';
+  ctx.shadowBlur = 14;
   ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Cuore al centro
+  ctx.fillStyle = '#ff5fa8';
+  ctx.font = '18px "Font Awesome 6 Free"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('\uf004', cx, cy + 1);
 }
 
 function pickWheelPrizeIndex() {
@@ -1021,8 +1484,8 @@ function spinWheel() {
   if (prize.type === 'credits') {
     userState.credits += prize.credits;
   } else {
-    let pool = cardsDatabase.filter(c => !isUnlocked(c.id) && (c.rarity === 'RARA' || c.rarity === 'LEGGENDARIA'));
-    if (pool.length === 0) pool = cardsDatabase.filter(c => !isUnlocked(c.id));
+    let pool = cardsDatabase.filter(c => !isUnlocked(c.id) && isObtainable(c) && (c.rarity === 'RARA' || c.rarity === 'LEGGENDARIA'));
+    if (pool.length === 0) pool = cardsDatabase.filter(c => !isUnlocked(c.id) && isObtainable(c));
     if (pool.length > 0) {
       wonCard = randomItem(pool);
       unlockCard(wonCard.id);
@@ -1031,6 +1494,7 @@ function spinWheel() {
       userState.credits += bonusCredits;
     }
   }
+  missionEvent('wheel');
   saveProgress();
 
   appWheelSpinning = true;
@@ -1070,7 +1534,8 @@ function spinWheel() {
 function updateRankBadge() {
   const rankEl = byId('rank-title-text');
   if (!rankEl) return;
-  const ratio = cardsDatabase.length > 0 ? userState.unlockedCards.length / cardsDatabase.length : 0;
+  const totalCards = completionTotal();
+  const ratio = totalCards > 0 ? userState.unlockedCards.length / totalCards : 0;
 
   let rank = 'Novizia 🌸';
   if (ratio >= 1) rank = 'Sapphic Legend 👑';
@@ -1081,7 +1546,7 @@ function updateRankBadge() {
 }
 
 function updateUI() {
-  const total = cardsDatabase.length;
+  const total = completionTotal();
   const unlockedCount = userState.unlockedCards.length;
 
   // crediti (con piccolo effetto quando cambiano)
@@ -1131,14 +1596,10 @@ function updateUI() {
     }
   }
 
-  // preferita
-  const favSlot = byId('favorite-card-slot');
-  if (favSlot) {
-    const favCard = userState.favoriteCardId ? cardsDatabase.find(c => c.id === userState.favoriteCardId) : null;
-    favSlot.innerHTML = favCard
-      ? createCardHTML(favCard)
-      : '<p class="empty-fav-text">+ Tocca per scegliere la tua preferita</p>';
-  }
+  renderShowcase();
+  renderHomeBar();
+  renderDailyOffer();
+  updateReadyDots();
 }
 
 function saveUsername() {
@@ -1187,16 +1648,37 @@ function openAvatarSelector() {
   byId('selection-modal').classList.remove('hidden');
 }
 
-function openFavoriteSelector() {
-  byId('selection-modal-title').innerText = 'Scegli la tua preferita';
-  byId('avatar-action-box').innerHTML = '';
+/* ---------- VETRINA (3 card preferite) ---------- */
+function renderShowcase() {
+  const row = byId('showcase-row');
+  if (!row) return;
+  row.innerHTML = userState.showcaseCardIds.map((id, slot) => {
+    const card = id ? cardsDatabase.find(c => c.id === id) : null;
+    return `
+      <div class="showcase-slot ${card ? 'filled' : ''}" onclick="openShowcaseSelector(${slot})">
+        ${card ? createCardHTML(card) : '<span class="showcase-plus"><i class="fa-solid fa-plus"></i></span>'}
+      </div>
+    `;
+  }).join('');
+}
+
+function openShowcaseSelector(slot) {
+  byId('selection-modal-title').innerText = `Vetrina · posto ${slot + 1}`;
+  const current = userState.showcaseCardIds[slot];
+
+  byId('avatar-action-box').innerHTML = current
+    ? `<div class="avatar-actions"><button class="btn-primary btn-ghost" onclick="setShowcaseCard(${slot}, null)">Svuota questo posto</button></div>`
+    : '';
+
+  // le card già messe negli altri posti non si ripetono
+  const usedElsewhere = userState.showcaseCardIds.filter((id, i) => id && i !== slot);
+  const owned = cardsDatabase.filter(c => isUnlocked(c.id) && !usedElsewhere.includes(c.id));
 
   const grid = byId('selection-grid');
-  const owned = cardsDatabase.filter(c => isUnlocked(c.id));
   grid.innerHTML = owned.length === 0
-    ? '<p class="selection-empty">Sblocca prima qualche card per sceglierne una preferita!</p>'
+    ? '<p class="selection-empty">Sblocca prima qualche card per metterla in vetrina!</p>'
     : owned.map(card => `
-        <div class="selection-item" style="background-image: url('${card.img}')" onclick="selectFavoriteCard(${card.id})">
+        <div class="selection-item" style="background-image: url('${card.img}')" onclick="setShowcaseCard(${slot}, ${card.id})">
           <span>${card.name}</span>
         </div>
       `).join('');
@@ -1204,8 +1686,8 @@ function openFavoriteSelector() {
   byId('selection-modal').classList.remove('hidden');
 }
 
-function selectFavoriteCard(cardId) {
-  userState.favoriteCardId = cardId;
+function setShowcaseCard(slot, cardId) {
+  userState.showcaseCardIds[slot] = cardId;
   saveProgress();
   updateUI();
   closeModal('selection-modal');
@@ -1262,6 +1744,9 @@ async function handleCustomAvatarUpload(event) {
    AVVIO
    ========================================================================== */
 function initApp() {
+  ensureHomeSheet();
+  ensureMissions();
+  ensureDailyOffer();
   renderCollections();
   renderShop();
   updateTimer();
@@ -1280,3 +1765,450 @@ document.addEventListener('visibilitychange', () => {
     updateUI();
   }
 });
+
+// ---------- PALLINI "PRONTO!" SULLA BARRA IN BASSO ----------
+function setNavDot(screenId, show, extraClass) {
+  const btn = document.querySelector('.nav-item[onclick*="' + screenId + '"]');
+  if (!btn) return;
+  let dot = btn.querySelector('.nav-dot');
+  if (!dot) {
+    dot = document.createElement('span');
+    dot.className = 'nav-dot';
+    btn.appendChild(dot);
+  }
+  dot.classList.toggle('gold', !!extraClass);
+  dot.classList.toggle('hidden', !show);
+}
+
+function updateReadyDots() {
+  const oggi = todayKey();
+  const streakPronta = userState.lastStreakClaimDate !== oggi;
+  const ruotaPronta  = userState.lastWheelPlayed !== oggi;
+  const quizPronto   = userState.lastQuizPlayed !== oggi;
+  const freePronta   = (Date.now() - userState.lastFreeClaim) >= FREE_CARD_COOLDOWN;
+
+  setNavDot('sec-home', streakPronta || ruotaPronta || quizPronto || freePronta, false);
+
+  const eventoAttivo = EVENTS.some(e => eventStatus(e) === 'active');
+  setNavDot('sec-shop', eventoAttivo, true);
+  if (missionsPending()) setNavDot('sec-home', true, false);
+  if (offerAvailable() && userState.offerSeen !== todayKey()) setNavDot('sec-shop', true, true);
+}
+
+// ---------- MISSIONI GIORNALIERE v2 ----------
+const MISSION_REWARD = 15;
+const MISSION_BONUS = 40;
+const MISSION_POOL = [
+  { type: 'pack',   text: 'Apri una busta',                 target: 1 },
+  { type: 'wheel',  text: 'Gira la ruota della fortuna',    target: 1 },
+  { type: 'quiz', text: 'Gioca a Trova la Coppia', target: 1 },
+  { type: 'streak', text: 'Riscatta la streak di oggi',     target: 1 },
+  { type: 'album',  text: 'Sfoglia un album',               target: 1 },
+  { type: 'buy',    text: 'Compra una card nello shop',     target: 1 },
+  { type: 'wish',   text: 'Aggiungi una card ai desideri',  target: 1 }
+];
+
+function ensureMissions() {
+  const oggi = todayKey();
+  if (!userState.missions || userState.missions.date !== oggi || userState.missions.v !== 2) {
+    userState.missions = {
+      v: 2,
+      date: oggi,
+      bonusGiven: false,
+      list: shuffle(MISSION_POOL).slice(0, 3).map(m => ({
+        type: m.type, text: m.text, target: m.target, progress: 0, done: false
+      }))
+    };
+    saveProgress();
+  }
+  return userState.missions;
+}
+
+function missionsPending() {
+  return ensureMissions().list.some(m => !m.done);
+}
+
+// ----- Notifica in alto -----
+function showToast(title, text, icon) {
+  let wrap = byId('toast-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'toast-wrap';
+    document.body.appendChild(wrap);
+  }
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = '<i class="' + icon + '"></i><div><strong>' + title + '</strong><span>' + text + '</span></div>';
+  wrap.appendChild(t);
+  setTimeout(function () {
+    t.classList.add('out');
+    setTimeout(function () { t.remove(); }, 400);
+  }, 3200);
+}
+
+// ----- Avanzamento missioni (accredito automatico) -----
+function missionEvent(type) {
+  const s = ensureMissions();
+  const completate = [];
+  s.list.forEach(function (m) {
+    if (m.type === type && !m.done) {
+      m.progress++;
+      if (m.progress >= m.target) { m.done = true; completate.push(m); }
+    }
+  });
+  if (!completate.length) { renderHomeBar(); return; }
+
+  userState.credits += MISSION_REWARD * completate.length;
+  let bonus = false;
+  if (!s.bonusGiven && s.list.every(function (m) { return m.done; })) {
+    s.bonusGiven = true;
+    userState.credits += MISSION_BONUS;
+    bonus = true;
+  }
+  saveProgress();
+  updateUI();
+
+  completate.forEach(function (m) {
+    showToast('Missione completata!', m.text + ' (+' + MISSION_REWARD + ' crediti)', 'fa-solid fa-circle-check');
+  });
+  if (bonus) {
+    setTimeout(function () {
+      showToast('Tutte le missioni completate!', 'Bonus +' + MISSION_BONUS + ' crediti', 'fa-solid fa-trophy');
+    }, 900);
+  }
+  updateReadyDots();
+}
+
+// ----- Barra con le due icone in alto nella Home -----
+function ensureHomeBar() {
+  let bar = byId('home-quick-bar');
+  if (bar) return bar;
+  const home = byId('sec-home');
+  if (!home) return null;
+  bar = document.createElement('div');
+  bar.id = 'home-quick-bar';
+  bar.innerHTML =
+    '<button class="quick-btn" id="quick-streak" onclick="openHomeSheet(\'streak\')"></button>' +
+    '<button class="quick-btn" id="quick-missions" onclick="openHomeSheet(\'missions\')"></button>';
+  home.insertBefore(bar, home.firstChild);
+  return bar;
+}
+
+function renderHomeBar() {
+  if (!ensureHomeBar()) return;
+  const daRiscattare = userState.lastStreakClaimDate !== todayKey();
+  byId('quick-streak').innerHTML =
+    '<i class="fa-solid fa-fire-flame-curved"></i><b>' + currentStreakValue() + '</b>' +
+    (daRiscattare ? '<span class="quick-dot"></span>' : '');
+
+  const s = ensureMissions();
+  const fatte = s.list.filter(function (m) { return m.done; }).length;
+  byId('quick-missions').innerHTML =
+    '<i class="fa-solid fa-bullseye"></i><b>' + fatte + '/' + s.list.length + '</b>' +
+    (fatte < s.list.length ? '<span class="quick-dot"></span>' : '');
+
+  const sheet = byId('home-sheet');
+  if (sheet && !sheet.classList.contains('hidden')) renderSheet();
+}
+
+// ----- Pannello che si apre -----
+function ensureHomeSheet() {
+  let sheet = byId('home-sheet');
+  if (sheet) return sheet;
+  sheet = document.createElement('div');
+  sheet.id = 'home-sheet';
+  sheet.className = 'modal hidden';
+  sheet.innerHTML =
+    '<div class="modal-content sheet-content">' +
+      '<button class="close-btn sheet-close" onclick="closeHomeSheet()">&times;</button>' +
+      '<div id="sheet-streak"><div id="streak-week"></div></div>' +
+      '<div id="sheet-missions"></div>' +
+    '</div>';
+  sheet.addEventListener('click', function (e) { if (e.target === sheet) closeHomeSheet(); });
+  document.body.appendChild(sheet);
+
+  // il box streak originale va dentro al pannello (i suoi pulsanti continuano a funzionare)
+  const vecchio = document.querySelector('.streak-box');
+  const cont = byId('sheet-streak');
+  if (vecchio) {
+    cont.appendChild(vecchio);
+  } else {
+    cont.insertAdjacentHTML('beforeend',
+      '<p id="streak-info-text"></p>' +
+      '<button id="btn-claim-streak" class="btn-primary" onclick="claimDailyStreak()">RISCATTA</button>');
+  }
+  return sheet;
+}
+
+function openHomeSheet(vista) {
+  const sheet = ensureHomeSheet();
+  sheet.dataset.view = vista;
+
+  // Aggiorna testo e pulsante usando i dati attuali
+  updateStreakUI();
+  updateStreakUI();
+  renderSheet();
+
+  sheet.classList.remove('hidden');
+}
+
+function closeHomeSheet() {
+  const sheet = byId('home-sheet');
+  if (sheet) sheet.classList.add('hidden');
+}
+
+function renderSheet() {
+  const sheet = byId('home-sheet');
+  if (!sheet) return;
+  const v = sheet.dataset.view;
+  byId('sheet-streak').style.display = v === 'streak' ? 'block' : 'none';
+  byId('sheet-missions').style.display = v === 'missions' ? 'block' : 'none';
+  if (v === 'streak') renderStreakWeek(); else renderMissionsList();
+}
+
+function renderStreakWeek() {
+  const box = byId('streak-week');
+  if (!box) return;
+  const streak = currentStreakValue();
+  const oggiRiscosso = userState.lastStreakClaimDate === todayKey();
+  let fatti = streak % 7;
+  if (oggiRiscosso && streak > 0 && streak % 7 === 0) fatti = 7;
+  let pallini = '';
+  for (let i = 1; i <= 7; i++) {
+    pallini += '<span class="week-dot' + (i <= fatti ? ' on' : '') + (i === 7 ? ' last' : '') + '">' +
+               (i === 7 ? '<i class="fa-solid fa-gift"></i>' : i) + '</span>';
+  }
+  box.innerHTML =
+    '<h4 class="sheet-title"><i class="fa-solid fa-fire-flame-curved"></i> La tua streak</h4>' +
+    '<div class="week-row">' + pallini + '</div>' +
+    '<p class="week-hint">Al settimo giorno ricevi un bonus di crediti</p>';
+}
+
+function renderMissionsList() {
+  const box = byId('sheet-missions');
+  if (!box) return;
+  const s = ensureMissions();
+  const righe = s.list.map(function (m) {
+    return '<div class="mission-row' + (m.done ? ' done' : '') + '">' +
+             '<span class="mission-text">' + m.text + '</span>' +
+             (m.done
+               ? '<span class="mission-check"><i class="fa-solid fa-check"></i></span>'
+               : '<span class="mission-progress">+' + MISSION_REWARD + '</span>') +
+           '</div>';
+  }).join('');
+  const tutte = s.list.every(function (m) { return m.done; });
+  box.innerHTML =
+    '<h4 class="sheet-title"><i class="fa-solid fa-bullseye"></i> Missioni di oggi</h4>' +
+    righe +
+    '<div class="mission-bonus' + (tutte ? ' done' : '') + '">' +
+      (tutte ? 'Bonus ricevuto: +' + MISSION_BONUS + ' crediti' : 'Completa tutte e 3: +' + MISSION_BONUS + ' crediti extra') +
+    '</div>';
+}
+
+// ---------- OFFERTA DEL GIORNO ----------
+const OFFER_DISCOUNT = 0.3;
+const OFFER_LEGENDARY_CHANCE = 0.3;
+const OFFER_LABELS = { RARA: 'Rara', LEGGENDARIA: 'Leggendaria' };
+let offerPurchasePending = false;
+
+function offerPrice(card) {
+  return Math.max(1, Math.round(card.price * (1 - OFFER_DISCOUNT)));
+}
+
+function ensureDailyOffer() {
+  const oggi = todayKey();
+  const o = userState.dailyOffer;
+  if (o && o.date === oggi) return o;
+
+  const pool = cardsDatabase.filter(function (c) {
+    return (c.rarity === 'RARA' || c.rarity === 'LEGGENDARIA') && !isUnlocked(c.id) && isObtainable(c);
+  });
+  let cardId = null;
+  if (pool.length) {
+    const leg = pool.filter(function (c) { return c.rarity === 'LEGGENDARIA'; });
+    const rare = pool.filter(function (c) { return c.rarity === 'RARA'; });
+    const scegliLeg = leg.length && (!rare.length || Math.random() < OFFER_LEGENDARY_CHANCE);
+    cardId = randomItem(scegliLeg ? leg : rare).id;
+  }
+  userState.dailyOffer = { date: oggi, cardId: cardId, bought: false };
+  saveProgress();
+  return userState.dailyOffer;
+}
+
+function getOfferCard() {
+  const o = ensureDailyOffer();
+  if (!o.cardId) return null;
+  return cardsDatabase.find(function (c) { return c.id === o.cardId; }) || null;
+}
+
+function offerAvailable() {
+  const o = ensureDailyOffer();
+  const card = getOfferCard();
+  return !!card && !o.bought && !isUnlocked(card.id) && isObtainable(card);
+}
+
+function getOfferBox() {
+  let box = byId('daily-offer');
+  if (box) return box;
+  box = document.createElement('div');
+  box.id = 'daily-offer';
+  box.className = 'daily-offer';
+  const tabs = document.querySelector('.shop-tabs');
+  const shop = byId('sec-shop');
+  if (tabs && tabs.parentNode) tabs.parentNode.insertBefore(box, tabs.nextSibling);
+  else if (shop) shop.insertBefore(box, shop.firstChild);
+  else return null;
+  return box;
+}
+
+function renderDailyOffer() {
+  const box = getOfferBox();
+  if (!box) return;
+  const card = getOfferCard();
+  if (!card) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+
+  if (!offerAvailable()) {
+    box.innerHTML =
+      '<div class="offer-done"><i class="fa-solid fa-tag"></i> ' +
+      'Offerta di oggi esaurita. Torna domani per una nuova!</div>';
+    return;
+  }
+
+  const mezzanotte = new Date();
+  mezzanotte.setHours(24, 0, 0, 0);
+  const timer = formatRemaining(mezzanotte.getTime() - Date.now());
+  const nuovo = offerPrice(card);
+
+  box.innerHTML =
+    '<div class="offer-head">' +
+      '<span class="offer-title"><i class="fa-solid fa-tag"></i> Offerta del giorno</span>' +
+      '<span class="offer-chip">-' + Math.round(OFFER_DISCOUNT * 100) + '%</span>' +
+    '</div>' +
+    '<div class="offer-body">' +
+            '<div class="offer-card">' + createLockedCardHTML(card, OFFER_LABELS[card.rarity]) + '</div>' +
+      '<div class="offer-info">' +
+        '<div class="offer-name">Card misteriosa</div>' +
+        '<div class="offer-hint">Categoria: ' + card.category + '</div>' +
+        '<div class="offer-rarity ' + card.rarity + '">' + OFFER_LABELS[card.rarity] + '</div>' +
+        '<div class="offer-prices">' +
+          '<span class="offer-old"><i class="fa-solid fa-coins"></i> ' + card.price + '</span>' +
+          '<span class="offer-new"><i class="fa-solid fa-coins"></i> ' + nuovo + '</span>' +
+        '</div>' +
+        '<div class="offer-timer"><i class="fa-regular fa-clock"></i> Scade tra ' + timer + '</div>' +
+        '<button class="btn-primary offer-btn" onclick="buyDailyOffer()">ACQUISTA</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function buyDailyOffer() {
+  if (!offerAvailable()) return;
+  const card = getOfferCard();
+  const prezzo = offerPrice(card);
+  if (userState.credits < prezzo) {
+    showPopup('Crediti insufficienti!',
+      'Ti servono ' + prezzo + ' crediti per questa offerta. Gira la ruota o completa le missioni!',
+      'fa-solid fa-coins');
+    return;
+  }
+  offerPurchasePending = true;
+  pendingPurchasePackId = null;
+  pendingPurchaseCardId = card.id;
+    openConfirmBuy('Offerta del giorno',
+    'Vuoi acquistare questa card ' + OFFER_LABELS[card.rarity] + ' a prezzo scontato: ' +
+    prezzo + ' crediti invece di ' + card.price + '? La scoprirai subito dopo l\'acquisto!');
+}
+
+// ---------- PREMI PAGINA E ALBUM COMPLETATI ----------
+const PAGE_REWARD = 100;
+const ALBUM_REWARD = 500;
+
+function pageKey(collectionId, page) {
+  return collectionId + ':' + page;
+}
+
+function checkPageRewards(collectionId) {
+  const cards = cardsDatabase.filter(function (c) { return c.collectionId === collectionId; });
+  if (!cards.length) return;
+  const totalePagine = Math.ceil(cards.length / albumState.cardsPerPage);
+  const pagineFatte = [];
+  let albumCompleto = true;
+  let changed = false;
+
+  for (let p = 1; p <= totalePagine; p++) {
+    const start = (p - 1) * albumState.cardsPerPage;
+    const pagina = cards.slice(start, start + albumState.cardsPerPage);
+    const completa = pagina.length && pagina.every(function (c) { return isUnlocked(c.id); });
+    if (completa) pagineFatte.push(p);
+    else albumCompleto = false;
+  }
+
+  // Premi per ogni pagina completata
+  pagineFatte.forEach(function (p) {
+    const key = pageKey(collectionId, p);
+    if (!Array.isArray(userState.pageRewards)) userState.pageRewards = [];
+    if (userState.pageRewards.includes(key)) return;
+    userState.pageRewards.push(key);
+    changed = true;
+    userState.credits += PAGE_REWARD;
+    showToast('Pagina ' + p + ' completata!', '+' + PAGE_REWARD + ' crediti', 'fa-solid fa-book-open');
+  });
+
+  // Premio per l'album intero
+  if (!Array.isArray(userState.albumRewards)) userState.albumRewards = [];
+  if (albumCompleto && !userState.albumRewards.includes(collectionId)) {
+    userState.albumRewards.push(collectionId);
+    changed = true;
+    userState.credits += ALBUM_REWARD;
+    showToast('Album completato!', '+' + ALBUM_REWARD + ' crediti', 'fa-solid fa-crown');
+  }
+
+  if (changed) {
+    saveProgress();
+    updateUI();
+  }
+}
+
+// ---------- EFFETTI PER LE LEGGENDARIE ----------
+function legendaryEffect() {
+  // Vibrazione (Android e alcuni browser mobile; su iPhone non è supportata)
+  if (navigator.vibrate) {
+    try { navigator.vibrate([80, 60, 120]); } catch (e) {}
+  }
+  // Lampo dorato
+  let flash = byId('legendary-flash');
+  if (!flash) {
+    flash = document.createElement('div');
+    flash.id = 'legendary-flash';
+    document.body.appendChild(flash);
+  }
+  flash.classList.remove('run');
+  void flash.offsetWidth; // riavvia l'animazione
+  flash.classList.add('run');
+
+  // Coriandoli
+  let confetti = byId('legendary-confetti');
+  if (!confetti) {
+    confetti = document.createElement('div');
+    confetti.id = 'legendary-confetti';
+    document.body.appendChild(confetti);
+  }
+  confetti.innerHTML = '';
+  for (let i = 0; i < 40; i++) {
+    const p = document.createElement('span');
+    p.className = 'confetti-piece';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDelay = (Math.random() * 0.6) + 's';
+    p.style.animationDuration = (1.6 + Math.random() * 1.2) + 's';
+    const colori = ['#ffd84d', '#ff5fa8', '#9b59ff', '#fff'];
+    p.style.background = colori[Math.floor(Math.random() * colori.length)];
+    confetti.appendChild(p);
+  }
+  setTimeout(function () { confetti.innerHTML = ''; }, 3000);
+}
+
+function hasLegendary(cards) {
+  return cards.some(function (c) { return c.rarity === 'LEGGENDARIA'; });
+}
+
+let legendaryShown = false;
