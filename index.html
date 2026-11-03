@@ -2,12 +2,16 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+>
   <title>Celebrity Crush Cards</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&display=swap">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="mobile.css?v=2">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#8E44AD">
@@ -38,6 +42,9 @@
 
     <!-- 1. SEZIONE HOME -->
     <section id="sec-home" class="screen active">
+
+      <!-- EVENTO A TEMPO (compare solo quando c'è un evento) -->
+      <div id="event-banner" class="hidden"></div>
 
       <!-- STREAK GIORNALIERA -->
       <div class="home-box streak-box">
@@ -77,10 +84,10 @@
           <h4>Ruota della Fortuna</h4>
           <p>Gira e vinci crediti</p>
         </div>
-        <div class="home-card-link" onclick="openQuizModal()">
-          <i class="fa-solid fa-user-secret"></i>
-          <h4>Indovina la Crush</h4>
-          <p>Indovina (+30 Crediti)</p>
+        <div class="home-card-link" onclick="openMemoryGame()">
+          <i class="fa-solid fa-heart"></i>
+          <h4>Trova la Coppia</h4>
+          <p>Abbina le card e vinci crediti</p>
         </div>
       </div>
     </section>
@@ -142,7 +149,8 @@
 
       <!-- CARD SINGOLE PER CATEGORIA -->
       <div id="shop-singles-view" class="hidden">
-        <p class="shop-subtitle">Scegli le card che ti mancano e acquistale una a una!</p>
+        <p class="shop-subtitle">Scegli le card che ti mancano e acquistale una a una! Tocca il ♡ per metterle nei desideri.</p>
+        <div id="shop-filter" class="shop-filter"></div>
         <div id="shop-categories-list">
           <!-- Generato via JS -->
         </div>
@@ -171,10 +179,9 @@
         </div>
 
         <div class="favorite-crush-section">
-          <h4><i class="fa-solid fa-heart favorite-heart"></i> Crush Preferita</h4>
-          <div class="favorite-card-slot" id="favorite-card-slot" onclick="openFavoriteSelector()">
-            <p class="empty-fav-text">+ Tocca per scegliere la tua preferita</p>
-          </div>
+          <h4><i class="fa-solid fa-heart favorite-heart"></i> La Mia Vetrina</h4>
+          <div class="showcase-row" id="showcase-row"></div>
+          <p class="showcase-hint">Tocca un posto per scegliere una card da mostrare</p>
         </div>
 
         <div class="stats-container">
@@ -272,17 +279,76 @@
 
     <!-- MODALE INDOVINA LA CRUSH -->
     <div id="quiz-modal" class="modal hidden">
-      <div class="modal-content quiz-content">
-        <div class="modal-header">
-          <h3>Indovina la Crush 🕵️</h3>
-          <button class="close-btn" onclick="closeModal('quiz-modal')">&times;</button>
-        </div>
-        <p class="modal-desc">Indovina chi si nasconde dietro la foto sfocata e vinci +30 Crediti! Hai un solo tentativo al giorno.</p>
-        <div id="quiz-body">
-          <!-- Generato via JS -->
-        </div>
-      </div>
+  <div class="modal-content quiz-content">
+
+    <div class="modal-header">
+      <h3>Trova la Coppia 💞</h3>
+      <button class="close-btn" onclick="closeModal('quiz-modal')">&times;</button>
     </div>
+
+    <!-- SCELTA DIFFICOLTÀ -->
+    <div id="memory-difficulty-view">
+      <p class="modal-desc">
+        Abbina le card della collezione e vinci crediti.
+        Hai una partita gratuita al giorno!
+      </p>
+
+      <div class="memory-difficulty-grid">
+        <button class="memory-difficulty-btn" onclick="startMemoryGame(6)">
+          <strong>Facile</strong>
+          <span>6 coppie</span>
+          <span>+20 crediti</span>
+        </button>
+
+        <button class="memory-difficulty-btn" onclick="startMemoryGame(8)">
+          <strong>Media</strong>
+          <span>8 coppie</span>
+          <span>+30 crediti</span>
+        </button>
+
+        <button class="memory-difficulty-btn" onclick="startMemoryGame(12)">
+          <strong>Difficile</strong>
+          <span>12 coppie</span>
+          <span>+40 crediti</span>
+        </button>
+      </div>
+
+      <p class="memory-bonus-hint">
+        Bonus: +10 crediti se completi senza errori.
+      </p>
+    </div>
+
+    <!-- PARTITA -->
+    <div id="memory-game-view" class="hidden">
+      <div class="memory-status">
+        <span id="memory-pairs-found">Coppie: 0/6</span>
+        <span id="memory-errors">Errori: 0</span>
+      </div>
+
+      <div id="memory-grid" class="memory-grid"></div>
+
+      <button class="btn-primary btn-ghost" onclick="showMemoryDifficulty()">
+        Cambia difficoltà
+      </button>
+    </div>
+
+    <!-- RISULTATO -->
+    <div id="memory-result-view" class="hidden">
+      <div class="modal-icon">
+        <i class="fa-solid fa-heart"></i>
+      </div>
+
+      <h3 id="memory-result-title">Hai vinto!</h3>
+      <p id="memory-result-text">Hai trovato tutte le coppie!</p>
+      <p id="memory-reward-text">+20 crediti</p>
+
+      <button class="btn-primary btn-compact" onclick="closeModal('quiz-modal')">
+        Perfeito! 💖
+      </button>
+    </div>
+
+  </div>
+</div>
 
     <!-- MODALE RUOTA DELLA FORTUNA -->
     <div id="wheel-modal" class="modal hidden">
@@ -294,7 +360,7 @@
         <p class="modal-desc">Gira la ruota una volta al giorno: puoi vincere da 10 a 50 crediti o una card rara!</p>
 
         <div class="wheel-outer-wrapper">
-          <div class="wheel-pointer">▼</div>
+          <div class="wheel-pointer" aria-hidden="true"></div>
           <div class="wheel-container" id="wheel-container">
             <canvas id="wheel-canvas" width="280" height="280"></canvas>
           </div>
@@ -376,7 +442,7 @@
   </div>
 
   <!-- script.js = dati e stato · app.js = tutta la logica -->
-  <script src="script.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="script.js?v=8"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
