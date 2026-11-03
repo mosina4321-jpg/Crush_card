@@ -1046,6 +1046,14 @@ function setupScratchCanvas() {
 function updateTimer() {
   renderEventBanner();
   const remaining = FREE_CARD_COOLDOWN - (Date.now() - userState.lastFreeClaim);
+   const cardBackText = document.querySelector(
+  '#card-flip-box .card-back-pattern span'
+);
+
+if (cardBackText) {
+  cardBackText.textContent =
+    remaining <= 0 ? 'TOCCA PER RISCATTARE' : 'TORNA PRESTO';
+}
   const box = byId('card-flip-box');
   const countdown = byId('countdown');
   const timerText = byId('timer-text');
